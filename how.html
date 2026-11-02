@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>How the Fleet Model Works</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#EEF0F2;--panel:#FFFFFF;--panel-2:#F6F7F8;--line:#D5D9DE;--ink:#15191E;--ink-2:#4A535D;--ink-3:#7B8591;--accent:#A31F34;--code:#F1F3F5;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0C1015;--panel:#141A21;--panel-2:#10151B;--line:#27303A;--ink:#E7EBEF;--ink-2:#A6B0BB;--ink-3:#77818D;--accent:#E0566B;--code:#0F151B;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0C1015;--panel:#141A21;--panel-2:#10151B;--line:#27303A;--ink:#E7EBEF;--ink-2:#A6B0BB;--ink-3:#77818D;--accent:#E0566B;--code:#0F151B;color-scheme:dark}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Barlow',system-ui,sans-serif;font-size:15px;line-height:1.55;padding-block:18px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1,h2,h3{font-family:'Barlow Semi Condensed','Barlow',sans-serif;margin:0;text-wrap:balance;font-weight:600}
+h1{font-size:30px;line-height:1.1} h2{font-size:21px;margin-top:10px} h3{font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+a.back{color:var(--accent);font-weight:600;text-decoration:none} a.back:hover{text-decoration:underline}
+p{margin:0;max-width:72ch;color:var(--ink-2)} p b{color:var(--ink)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+pre{margin:0;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px;line-height:1.6;overflow-x:auto;color:var(--ink)}
+.eg{border-left:3px solid var(--accent);padding-left:12px}
+.eg p{color:var(--ink)}
+.tblw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{font-family:'Barlow Semi Condensed',sans-serif;text-transform:uppercase;letter-spacing:.07em;font-size:11.5px;color:var(--ink-3);text-align:left;padding:4px 10px 6px 0}
+td{border-top:1px solid var(--line);padding:6px 10px 6px 0;color:var(--ink-2);vertical-align:top} td:first-child{color:var(--ink);white-space:nowrap}
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+.flow div{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13.5px;color:var(--ink-2)}
+.flow b{display:block;color:var(--ink);font-family:'Barlow Semi Condensed',sans-serif;font-size:15px}
+</style></head><body><div class="wrap">
+<a class="back" href="index.html">&larr; Back to the replay</a>
+<h1>How the numbers are calculated</h1>
+<p>Two programs share the same vehicle data. <b>model.py</b> is the fast model that scores millions of fleets with simple formulas. <b>sim_day.py</b> plays one day request by request, 200 times, to check the model. The replay page shows the simulation. Every formula below is taken from the code.</p>
+
+<h2>1. One vehicle</h2>
+<div class="card">
+<p>Each vehicle is a set of parts from the Appendix tables. Cost, weight, energy use, range, speed and charging time follow from the parts.</p>
+<pre>cost    = (chassis + battery + charger + autonomy) x $1000 + motor          [$]
+weight  = chassis + battery + charger + motor + autonomy + seats x 100 kg   [kg, full load]
+power   = nominal + 0.1 x (weight - chassis weight) + autonomy power        [Wh/km]
+range   = battery kWh x 1000 / power                                        [km]
+speed   = min( 700 x motor kW / weight , speed limit )                      [km/h]
+speed_empty = same with the passengers removed from the weight</pre>
+<p><b>E-bikes</b> take their speed from a power balance on flat ground, solved numerically:</p>
+<pre>0.8 x motor W  =  0.005 x m x 9.81 x v  +  0.5 x 1.2 x 0.5 x v^3        (v in m/s, capped at 20 km/h)</pre>
+<p>Charging uses a taper. The first 80% of the energy goes in at full charger power and the last 20% at 30% of it:</p>
+<pre>charge_h   = battery kWh / charger kW x ( 0.8 + 0.2 / 0.3 )
+uptime_h   = range / speed
+downtime_h = charge_h + 0.25 h
+availability = uptime_h / ( uptime_h + downtime_h )</pre>
+<div class="eg"><p><b>Worked example: reference shuttle C3/P2/G3/M2/A4.</b> Cost $83,800. Weight 2,765 kg. Energy use 244 Wh/km, so a 100 kWh battery gives 410 km. Loaded speed 25.3 km/h and empty speed 32.2 km/h (the limit). Charging takes 2.44 h. Up-time is 16.2 h and down-time 2.69 h, so availability is 0.857.</p></div>
+</div>
+
+<h2>2. Demand and party size</h2>
+<div class="card">
+<p>Demand comes from the Appendix B table in passengers per hour, constant inside each 2 hour block:</p>
+<div class="tblw"><table><tr><th>Block start</th><td>00</td><td>02</td><td>04</td><td>06</td><td>08</td><td>10</td><td>12</td><td>14</td><td>16</td><td>18</td><td>20</td><td>22</td></tr><tr><th>People / h</th><td>15</td><td>5</td><td>15</td><td>50</td><td>150</td><td>150</td><td>150</td><td>100</td><td>75</td><td>100</td><td>50</td><td>35</td></tr></table></div>
+<p>A party is 1 to 6 people with shares 60, 20, 10, 5, 3 and 2%, so the mean party is 1.77 people. One party rides together. A party larger than the seats uses more vehicles. For a vehicle with <i>s</i> seats the average load is:</p>
+<pre>p(s) = E[ party size ] / E[ ceil( party size / s ) ]        p(1)=1.0   p(2)=1.416   p(4)=1.686   p(6)=1.77</pre>
+</div>
+
+<h2>3. The fast model (model.py)</h2>
+<div class="card">
+<p>For every 2 hour block the model asks how many vehicles are in service, how many trips per hour they can move, and how long a passenger waits.</p>
+<pre>cycle time   T = d / speed  +  0.5 x d / speed_empty  +  2 x 60 s        [h]   (d = 1.1 km average trip,
+                                                                       50% of trips return empty)
+in service   c = floor( n x availability )                            (2.57 vehicles in service counts as 2)
+capacity       = c x p(s) / T                                         [passengers/h]
+requests     lambda = demand / p(s)                                   [trips/h]
+busy vehicles  a = lambda x T          utilisation  rho = a / c</pre>
+<p>When the demand is shared by shuttles and bikes, it splits in proportion to their capacities. The wait is half the time between vehicles plus the drive of the nearest idle vehicle:</p>
+<pre>headway      = T x 60 / c                                             [min]
+idle         = max( c - min(a, c), 1 )
+pickup       = 1.3 x 0.5 x sqrt( 3.5 km2 / idle ) / speed_empty x 60  [min]
+wait         = 0.5 x headway + pickup       if rho &lt; 1,   else 30 min (capped)</pre>
+<p>The 1.3 is the detour factor from straight line to street. The nearest of <i>idle</i> vehicles spread at random over 3.5 km2 is on average 0.5 x sqrt(area / idle) away. The rush-hour test divides every speed by the traffic factor (shuttles 0.58, bikes 0.85) in the blocks that start at 08, 10, 12, 14 and 18.</p>
+<div class="eg"><p><b>Worked example, shuttles alone carrying a 150 people/h block.</b> T = 1.1/25.3 + 0.5 x 1.1/32.2 + 0.0333 = 0.0939 h. Ten shuttles give c = floor(8.57) = 8. Requests are 150/1.77 = 84.7 per hour, so a = 7.95 and rho = 0.99. Headway is 0.0939 x 60 / 8 = 0.70 min. Only one vehicle is idle, so the pickup drive is 1.3 x 0.5 x sqrt(3.5) / 32.2 x 60 = 2.3 min. Wait = 0.35 + 2.3 = 2.6 min.</p></div>
+<p><b>Average wait</b> is the demand-weighted wait over all blocks. <b>Peak wait</b> is the average wait in the busiest 2 hour block, and it is the one tested against the 5 minute requirement.</p>
+</div>
+
+<h2>4. Utility and cost</h2>
+<div class="card">
+<p>Each measure is turned into a single attribute utility by straight-line interpolation between the Task 1 points, then weighted:</p>
+<div class="tblw"><table><tr><th>Measure</th><th>Points (value : utility)</th><th>Weight</th></tr>
+<tr><td>Volume per day</td><td>0:0 &middot; 500:0.2 &middot; 1000:0.4 &middot; 1500:0.8 &middot; 2000:1</td><td>0.15</td></tr>
+<tr><td>Peak throughput per hour</td><td>0:0 &middot; 50:0.2 &middot; 100:0.5 &middot; 150:0.9 &middot; 200:1</td><td>0.25</td></tr>
+<tr><td>Wait (min)</td><td>0:1 &middot; 5:0.95 &middot; 10:0.75 &middot; 15:0.4 &middot; 20:0.2 &middot; 30:0</td><td>0.35</td></tr>
+<tr><td>Availability</td><td>0:0 &middot; 0.2:0.2 &middot; &hellip; &middot; 1:1</td><td>0.25</td></tr></table></div>
+<pre>MAU  = 0.15 x U(volume) + 0.25 x U(throughput) + 0.35 x U(wait) + 0.25 x U(availability)
+fleet cost = n_shuttles x shuttle cost + n_bikes x bike cost         (vehicles only)</pre>
+<p>Requirements checked: wait of the peak block at most 5 min, longest ride (2.1 km at the loaded speed, slowed by traffic in the rush test) at most 7 min, volume at least 1,500 per day, peak 150 and off-peak 50 passengers per hour.</p>
+</div>
+
+<h2>5. The day simulation (what the replay shows)</h2>
+<div class="card">
+<p>The simulation does not use averages. It plays the day request by request.</p>
+<div class="flow">
+<div><b>1. Requests arrive</b>Parties arrive at random times at the hourly rate of the demand table divided by 1.77 (Poisson). Each party size is drawn from the 60/20/10/5/3/2 shares.</div>
+<div><b>2. Pick a vehicle</b>Among idle vehicles, the one with the lowest battery takes the ride, so charging is staggered. If none is idle the request waits for the first vehicle to be free.</div>
+<div><b>3. Drive to the passenger</b>Distance is 1.3 x 0.5 x sqrt(3.5 / idle vehicles) at the empty speed. This drive is part of the wait and uses energy.</div>
+<div><b>4. Ride</b>Length is uniform between 0.2 and 2.0 km. Boarding and drop-off take 60 s each. With 50% chance the vehicle then drives back empty.</div>
+<div><b>5. Charge</b>Below 20% battery the vehicle goes to charge until full, at the tapered charging time.</div>
+<div><b>6. Count</b>Wait = time in line + pickup drive. Run 200 days with seeds 1000 to 1199 and average.</div>
+</div>
+<pre>wait   = ( start of ride - request time ) + pickup drive
+energy = energy - power x ( ride km x ( 2 if empty return else 1 ) + pickup km ) / 1000
+charge when energy &lt; max( 4 km x power / 1000 , 0.2 x battery )</pre>
+<p>The map in the replay is added afterwards. Each pickup, ride and empty return is placed on real Cambridge streets whose network length matches the simulation's distance, and the timing is the simulation's own. The replay was checked to give the same waits, trips, charging and passenger counts as the simulation.</p>
+</div>
+
+<h2>6. Why the model and the simulation differ</h2>
+<div class="card">
+<p>The model sees a smooth, even flow of requests. The simulation has random bunching, so a queue forms whenever several parties arrive within a short time, especially when utilisation is close to 1. For the reference fleet the model gives a peak wait of 2.6 min, the simulation 9.5 min. That is why the reference fails the 5 minute requirement in the simulation. The model is still used to search the design space because it is millions of times faster, and the simulation is used to confirm the short list.</p>
+</div>
+<a class="back" href="index.html">&larr; Back to the replay</a>
+</div></body></html>

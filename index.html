@@ -1,0 +1,735 @@
+<meta charset="utf-8"><title>Fleet Day Replay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout concept: a transit control room. One big street map of the 3.5 km2 service area, a fleet and requirement panel at its side, and two day-long charts below that share the playhead. */
+:root{
+  --bg:#EEF0F2; --panel:#FFFFFF; --panel-2:#F6F7F8; --line:#D5D9DE; --ink:#15191E; --ink-2:#4A535D; --ink-3:#7B8591;
+  --accent:#A31F34; --accent-ink:#FFFFFF;
+  --map-ground:#E9ECEF; --map-bld:#D3D8DE; --map-water:#C5DAEA; --map-street:#FFFFFF; --map-street-edge:#C3C9D0; --map-major:#FFFFFF; --map-label:#56606B; --map-ring:#A31F34;
+  --carry:#2563EB; --empty:#8B5CF6; --idle:#8A94A0; --charge:#16A34A; --wait-ok:#FFFFFF; --wait-mid:#F59E0B; --wait-bad:#DC2626;
+  --good:#15803D; --bad:#B91C1C; --warn:#B45309;
+  --f-ui:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif; --f-head:'Barlow Semi Condensed','Barlow',system-ui,sans-serif; --f-num:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C1015; --panel:#141A21; --panel-2:#10151B; --line:#27303A; --ink:#E7EBEF; --ink-2:#A6B0BB; --ink-3:#77818D;
+  --accent:#E0566B; --accent-ink:#0C1015;
+  --map-ground:#0F151B; --map-bld:#1C242D; --map-water:#10263A; --map-street:#2A343F; --map-street-edge:#10151B; --map-major:#36424F; --map-label:#8793A0; --map-ring:#E0566B;
+  --carry:#5B8DF7; --empty:#A98BFA; --idle:#6E7885; --charge:#34C766; --wait-ok:#F3F5F7; --wait-mid:#F5A524; --wait-bad:#FF5A5A;
+  --good:#4ADE80; --bad:#FF7A7A; --warn:#FBBF24; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1015; --panel:#141A21; --panel-2:#10151B; --line:#27303A; --ink:#E7EBEF; --ink-2:#A6B0BB; --ink-3:#77818D;
+  --accent:#E0566B; --accent-ink:#0C1015;
+  --map-ground:#0F151B; --map-bld:#1C242D; --map-water:#10263A; --map-street:#2A343F; --map-street-edge:#10151B; --map-major:#36424F; --map-label:#8793A0; --map-ring:#E0566B;
+  --carry:#5B8DF7; --empty:#A98BFA; --idle:#6E7885; --charge:#34C766; --wait-ok:#F3F5F7; --wait-mid:#F5A524; --wait-bad:#FF5A5A;
+  --good:#4ADE80; --bad:#FF7A7A; --warn:#FBBF24; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.4;padding-block:14px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em;text-wrap:balance}
+.top{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-end;justify-content:space-between}
+.title h1{font-size:26px;line-height:1.1}
+.title p{margin:3px 0 0;color:var(--ink-2);font-size:13px;max-width:62ch}
+.ctrls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.grp{display:flex;flex-direction:column;gap:4px;min-width:0}
+.grp>label,.lbl{font-family:var(--f-head);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
+.seg button{all:unset;cursor:pointer;padding:6px 10px;font-size:13px;color:var(--ink-2);border-right:1px solid var(--line);white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:600}
+.seg button:focus-visible,.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg button:hover:not([aria-pressed="true"]){background:var(--panel-2)}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;align-items:stretch}
+.leftcol{display:flex;flex-direction:column;gap:8px;min-width:0}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--map-ground);min-height:460px;height:clamp(520px,78vh,860px);touch-action:none}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
+#map.drag{cursor:grabbing}
+.hud{position:absolute;left:12px;top:10px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.clock{font-family:var(--f-num);font-weight:500;font-size:46px;line-height:1;letter-spacing:-.02em;color:var(--ink);text-shadow:0 0 12px var(--map-ground),0 0 3px var(--map-ground)}
+.clock small{font-size:14px;color:var(--ink-2);margin-left:6px;letter-spacing:0}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--ink-2);width:max-content;max-width:100%}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--ink-3);display:inline-block}
+.chip.traffic{color:var(--wait-bad);border-color:var(--wait-bad)}
+.chip.traffic i{background:var(--wait-bad)}
+.maptools{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+.btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:7px;background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:13px;font-weight:600;box-sizing:border-box}
+.btn:hover{background:var(--panel-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.legend{position:absolute;left:10px;bottom:10px;display:flex;flex-wrap:wrap;gap:4px 12px;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--ink-2);max-width:calc(100% - 20px)}
+.legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.legend svg{display:block}
+.attrib{position:absolute;right:10px;bottom:8px;font-size:10.5px;color:var(--map-label);text-align:right;pointer-events:none;max-width:46%}
+#tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:7px;padding:7px 9px;font-size:12px;line-height:1.35;min-width:150px;z-index:5;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+#tip b{font-family:var(--f-head);font-size:13px}
+#tip .m{font-family:var(--f-num)}
+.side{display:flex;flex-direction:column;gap:10px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.card h3{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.fleet{font-family:var(--f-head);font-size:19px;line-height:1.2;font-weight:600}
+.fleet-sub{color:var(--ink-2);font-size:12.5px;margin-top:4px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.stat{background:var(--panel-2);border-radius:7px;padding:6px 8px;min-width:0}
+.stat b{display:block;font-family:var(--f-num);font-size:19px;font-weight:500;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:5px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.live{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-top:10px}
+.live div{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--ink-2);border-bottom:1px dashed var(--line);padding-bottom:4px}
+.live b{font-family:var(--f-num);font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+table.cmp{width:100%;border-collapse:collapse;font-size:12.5px}
+table.cmp th{font-family:var(--f-head);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);text-align:right;font-weight:600;padding:0 0 5px 8px}
+table.cmp th:first-child,table.cmp td:first-child{text-align:left;padding-left:0}
+table.cmp td{text-align:right;padding:5px 0 5px 8px;border-top:1px solid var(--line);font-family:var(--f-num);font-variant-numeric:tabular-nums}
+table.cmp td:first-child{font-family:var(--f-ui);color:var(--ink-2)}
+td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:600} td.warn{color:var(--warn);font-weight:600}
+.verdict{display:flex;flex-direction:column;gap:6px;align-items:stretch;margin-top:10px;padding:8px 10px;border-radius:8px;font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2)}
+.verdict b{color:var(--ink)}
+.ticker{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12.5px;min-height:150px}
+.ticker li{display:flex;gap:8px;color:var(--ink-2);animation:in .25s ease-out}
+.ticker time{font-family:var(--f-num);color:var(--ink-3);flex:none}
+.ticker li.bad{color:var(--bad)} .ticker li.chg{color:var(--charge)}
+@keyframes in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.bar{display:grid;grid-template-columns:auto auto minmax(160px,1fr) auto;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.bar input[type=range]{width:100%;accent-color:var(--accent)}
+.bar select{font:inherit;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 8px}
+.timeval{font-family:var(--f-num);font-size:13px;color:var(--ink-2);min-width:5.5ch;text-align:right}
+.charts{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.chartcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px 6px;min-width:0}
+.chartcard h3{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;justify-content:space-between}
+.chartcard h3 span{font-family:var(--f-ui);letter-spacing:0;text-transform:none;font-weight:400;font-size:12px;color:var(--ink-3)}
+.chartcard canvas{width:100%;display:block;cursor:pointer}
+.note{font-size:12px;color:var(--ink-3);max-width:110ch;margin:2px 0 0}
+.note b{color:var(--ink-2);font-weight:600}
+#loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--f-head);font-size:16px;color:var(--ink-2);background:var(--map-ground);z-index:6}
+.bgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.bcol{display:flex;flex-direction:column;gap:6px;min-width:0}.bhead{font-family:var(--f-head);font-weight:600;font-size:15px}
+.bcol label{display:flex;flex-direction:column;gap:2px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-weight:600;font-family:var(--f-head)}
+.bcol select,.bcol input{font:inherit;font-size:13px;text-transform:none;letter-spacing:0;font-weight:400;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 7px;width:100%;min-width:0;font-family:var(--f-ui)}
+.bsum{font-size:12.5px;color:var(--ink-2);background:var(--panel-2);border-radius:8px;padding:8px 10px;line-height:1.5}.bsum b{color:var(--ink);font-family:var(--f-num);font-weight:500}
+.brow{display:flex;gap:8px;flex-wrap:wrap}.bnote{margin:0;font-size:11.5px;color:var(--ink-3)}
+@media (max-width:1060px){.main{grid-template-columns:minmax(0,1fr)}.mapbox{height:clamp(380px,60vh,640px)}.side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.side .wide{grid-column:1/-1}}
+@media (max-width:640px){.side{grid-template-columns:minmax(0,1fr)}.clock{font-size:34px}.bar{grid-template-columns:auto auto 1fr}.bar .timeval{grid-column:3;text-align:right}.stats{grid-template-columns:repeat(2,1fr)}.attrib{display:none}.title h1{font-size:22px}}
+@media (prefers-reduced-motion:reduce){.ticker li{animation:none}}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div class="title">
+      <h1>Fleet Day Replay</h1>
+      <p>One simulated weekday of the autonomous shuttle and e-bike fleet, replayed on the streets of our MIT and Kendall service area. Timing, queues, batteries and waits are the simulation's own.</p>
+    </div>
+    <div class="ctrls">
+      <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button></div></div>
+      <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
+      <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
+      <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button></div></div>
+    </div>
+  </div>
+
+  <div class="main">
+   <div class="leftcol">
+    <div class="mapbox" id="mapbox">
+      <div id="loading">Loading streets and fleet…</div>
+      <canvas id="map" aria-label="Map of the service area with vehicles and waiting passengers"></canvas>
+      <div class="hud">
+        <div class="clock" id="clock">08:00<small id="ampm"></small></div>
+        <div class="chip traffic" id="trafficChip" hidden><i></i><span id="trafficTxt"></span></div>
+        <div class="chip" id="blockChip"><i></i><span id="blockTxt"></span></div>
+      </div>
+      <div class="maptools">
+        <button class="btn" id="zin" aria-label="Zoom in">+</button>
+        <button class="btn" id="zout" aria-label="Zoom out">−</button>
+        <button class="btn" id="zfit" aria-label="Reset view">Fit</button>
+        <button class="btn" id="tbld" aria-pressed="true" title="Show buildings">Bldg</button>
+        <button class="btn" id="troute" aria-pressed="true" title="Show routes of vehicles carrying passengers">Routes</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div id="tip" hidden></div>
+    </div>
+
+   <div class="bar">
+     <button class="btn primary" id="play" aria-label="Play or pause">Play</button>
+     <div class="grp" style="flex-direction:row;align-items:center;gap:8px"><label for="speed" style="white-space:nowrap">Speed</label>
+       <select id="speed"><option value="1">1 min / s</option><option value="3">3 min / s</option><option value="6" selected>6 min / s</option><option value="15">15 min / s</option><option value="40">40 min / s</option></select></div>
+     <input type="range" id="scrub" min="0" max="24" step="0.0027" value="8" aria-label="Time of day">
+     <div class="timeval" id="timeval">08:00</div>
+   </div>
+   </div>
+
+    <div class="side">
+      <div class="card wide" id="builder" hidden>
+        <h3>Build your own fleet</h3>
+        <div class="bgrid">
+          <div class="bcol"><div class="bhead">Shuttles</div>
+            <label>How many<input type="number" id="ns" min="0" max="80" value="10"></label>
+            <label>Body<select id="s_ch"></select></label><label>Battery<select id="s_ba"></select></label>
+            <label>Charger<select id="s_cg"></select></label><label>Motor<select id="s_mo"></select></label>
+            <label>Autonomy<select id="s_au"></select></label></div>
+          <div class="bcol"><div class="bhead">E-bikes</div>
+            <label>How many<input type="number" id="nb" min="0" max="150" value="10"></label>
+            <label>Frame<select id="b_fr"></select></label><label>Battery<select id="b_ba"></select></label>
+            <label>Charger<select id="b_cg"></select></label><label>Motor<select id="b_mo"></select></label></div>
+        </div>
+        <div class="bsum" id="bsum"></div>
+        <div class="brow"><button class="btn primary" id="brun">Simulate 200 days</button><button class="btn" id="bref">Start from the reference</button></div>
+        <p class="bnote">Runs the same equations as the Python model in your browser. The random numbers differ, so a day is close to the Python result but not identical.</p>
+      </div>
+      <div class="card wide">
+        <h3>Fleet</h3>
+        <div class="fleet" id="fleetName">…</div>
+        <div class="fleet-sub" id="fleetSub"></div>
+        <div class="stats" id="states"></div>
+      </div>
+      <div class="card wide">
+        <h3>Right now</h3>
+        <div class="live">
+          <div>Passengers waiting <b id="lWait">0</b></div>
+          <div>Longest wait now <b id="lLong">0.0 min</b></div>
+          <div>Trips done <b id="lDone">0</b></div>
+          <div>People carried <b id="lPeople">0</b></div>
+          <div>Avg wait so far <b id="lAvg">0.0 min</b></div>
+          <div>Fleet battery <b id="lBatt">100%</b></div>
+        </div>
+      </div>
+      <div class="card wide">
+        <h3>This day vs the model</h3>
+        <table class="cmp" id="cmp"></table>
+        <div class="verdict" id="verdict"></div>
+      </div>
+      <div class="card wide">
+        <h3>Event log</h3>
+        <ul class="ticker" id="ticker"></ul>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="charts">
+    <div class="chartcard"><h3>Wait of every passenger <span id="c1sub"></span></h3><canvas id="c1" height="230"></canvas></div>
+    <div class="chartcard"><h3>What the fleet is doing <span>vehicles by state, whole day</span></h3><canvas id="c2" height="170"></canvas></div>
+  </div>
+  <p class="note"><b>How to read it.</b> Each dot in the first chart is one request, placed where it arrived and as high as its wait. The dashed line is the 5 minute requirement. Shaded columns show hourly demand. In the rush-hour day, tinted hours are the traffic hours, when shuttles run at 58% and bikes at 85% of normal speed. The simulation has no street map: it draws random trip lengths and random positions. For this picture each pickup, ride and empty return is placed on real streets with the same length and the same timing, so queues, battery stops and waits match the numbers in the model validation exactly. Streets, buildings and river are open data from the City of Cambridge GIS, and landmark positions are approximate.</p>
+</div>
+
+<script>
+/* Live port of model.py (vehicle specs, fast model) and sim_day.py (day simulation) for the custom fleet builder.
+   Same equations and constants as the Python. Random numbers come from a JavaScript generator, so a day is
+   statistically the same as the Python day but not draw for draw identical. */
+(function(root){
+'use strict';
+const C={
+ R_BATT:{P1:[50,6,110],P2:[100,11,220],P3:[150,15,340],P4:[190,19,450],P5:[250,25,570],P6:[310,30,680],P7:[600,57,1400]},
+ R_CHAS:{C1:[2,1350,12,140],C2:[4,1600,17,135],C3:[6,1800,21,145],C4:[8,2000,29,150],C5:[10,2200,31,160],C6:[16,2500,33,165],C7:[20,4000,38,180],C8:[30,7000,47,210]},
+ R_CHG:{G1:[10,1,1],G2:[20,2.5,1.8],G3:[60,7,5]},
+ R_MOT:{M1:[35,50,4200],M2:[80,100,9800],M3:[110,210,13650],M4:[200,350,20600]},
+ R_AUT:{A3:[30,1.5,15],A4:[60,2.5,35],A5:[120,5,60]},
+ B_BATT:{E1:[0.5,0.6,5],E2:[1.5,1.5,11],E3:[3,2.6,17]},
+ B_FRAME:{B1:[1,20,2,30],B2:[1,17,3,25],B3:[2,35,3.5,40]},
+ B_CHG:{G1:[0.2,0.3,0.5],G2:[0.6,0.5,1.2]},
+ B_MOT:{K1:[5,0.35,300],K2:[4,0.5,400],K3:[7,1.5,600]},
+ PARTY:[[1,.60],[2,.20],[3,.10],[4,.05],[5,.03],[6,.02]],
+ DEMAND:{0:15,2:5,4:15,6:50,8:150,10:150,12:150,14:100,16:75,18:100,20:50,22:35},
+ BLOCK_H:2, PAX_KG:100, DWELL_S:60, CHARGE_OVERHEAD_H:.25, EMPTY_SHARE:.5, DETOUR:1.3, AREA:3.5,
+ TAPER_FAST:.8, TAPER_SLOW:.3, CRR:.005, RHO:1.2, CDA:.5, EFF:.8, G:9.81, LIMIT_ROAD:32.2, LIMIT_BIKE:20,
+ TRAFFIC:{blocks:[8,10,12,14,18],road:.58,bike:.85}, TRIP_KM:1.1, LONGEST_KM:2.1, RIDE:[.2,2.0], CHARGE_BELOW:.2, MAX_WAIT:30,
+ REQ:{wait:5,ride:7,volume:1500,peak:150,offpeak:50}
+};
+const PAXMEAN=C.PARTY.reduce((s,p)=>s+p[0]*p[1],0);
+function paxPerTrip(seats){let veh=0;C.PARTY.forEach(p=>veh+=Math.ceil(p[0]/seats)*p[1]);return PAXMEAN/veh}
+function physicsSpeed(motorKw,mass){const pw=C.EFF*motorKw*1000;let lo=0,hi=60;for(let i=0;i<80;i++){const mid=.5*(lo+hi),need=C.CRR*mass*C.G*mid+.5*C.RHO*C.CDA*mid**3;if(need>pw)hi=mid;else lo=mid}return lo*3.6}
+function finish(v){const taper=C.TAPER_FAST+(1-C.TAPER_FAST)/C.TAPER_SLOW;v.charge_h=v.cap_kwh/v.charger_kw*taper;v.uptime_h=v.range_km/v.speed;v.downtime_h=v.charge_h+C.CHARGE_OVERHEAD_H;v.avail=v.uptime_h/(v.uptime_h+v.downtime_h);return v}
+function roadVehicle(ch,ba,cg,mo,au){
+ const [pax,wch,cch,pnom]=C.R_CHAS[ch],[cap,cb,wb]=C.R_BATT[ba],[kwg,cgc,wg]=C.R_CHG[cg],[wm,kwm,cm]=C.R_MOT[mo],[wa,pa,ca]=C.R_AUT[au];
+ const cost=(cch+cb+cgc+ca)*1000+cm,weight=wch+wb+wg+wm+wa+pax*C.PAX_KG,power=pnom+.1*(weight-wch)+pa,range=cap*1000/power,wEmpty=weight-pax*C.PAX_KG;
+ const speed=Math.min(700*kwm/weight,C.LIMIT_ROAD),speedEmpty=Math.min(700*kwm/wEmpty,C.LIMIT_ROAD);
+ return finish({kind:'road',pax,cost,weight,power_wh_km:power,range_km:range,speed,speed_empty:speedEmpty,cap_kwh:cap,charger_kw:kwg,label:'Shuttle',spec:[ch,ba,cg,mo,au].join('/')});
+}
+function bikeVehicle(fr,ba,cg,mo){
+ const [pax,wf,cf,pnom]=C.B_FRAME[fr],[cap,cb,wb]=C.B_BATT[ba],[kwg,cgc,wg]=C.B_CHG[cg],[wm,kwm,cm]=C.B_MOT[mo];
+ const cost=(cf+cb+cgc)*1000+cm,weight=wf+wb+wg+wm+pax*C.PAX_KG,power=pnom,range=cap*1000/power,wEmpty=weight-pax*C.PAX_KG;
+ const speed=Math.min(physicsSpeed(kwm,weight),C.LIMIT_BIKE),speedEmpty=Math.min(physicsSpeed(kwm,wEmpty),C.LIMIT_BIKE);
+ return finish({kind:'bike',pax,cost,weight,power_wh_km:power,range_km:range,speed,speed_empty:speedEmpty,cap_kwh:cap,charger_kw:kwg,label:'Bike',spec:[fr,ba,cg,mo].join('/')});
+}
+const cycleH=(v,d,f)=>d/(v.speed*f)+C.EMPTY_SHARE*d/(v.speed_empty*f)+2*C.DWELL_S/3600;
+function capacityPax(v,n,f){if(!v||n<=0)return 0;const c=Math.floor(n*v.avail+1e-9);return c*paxPerTrip(v.pax)/cycleH(v,C.TRIP_KM,f)}
+function trafficF(rush,kind,t){if(!rush)return 1;const b=Math.floor(t/C.BLOCK_H)*C.BLOCK_H;return C.TRAFFIC.blocks.includes(b)?C.TRAFFIC[kind==='road'?'road':'bike']:1}
+function shares(sv,ns,bv,nb,rush){const out={};for(const st of Object.keys(C.DEMAND)){const inT=rush&&C.TRAFFIC.blocks.includes(+st),fr=inT?C.TRAFFIC.road:1,fb=inT?C.TRAFFIC.bike:1;const cS=capacityPax(sv,ns,fr),cB=capacityPax(bv,nb,fb);out[st]=cS+cB>0?cS/(cS+cB):(ns+nb>0?ns/(ns+nb):.5)}return out}
+
+/* ---------- the fast model for one fleet (model.py evaluate, simple wait formula) ---------- */
+function modelEval(sv,ns,bv,nb,rush){
+ const tr=rush?C.TRAFFIC:null,fr0=tr?tr.road:1,fb0=tr?tr.bike:1;
+ const halves=[[sv,ns,'road'],[bv,nb,'bike']];
+ const terms=f=>halves.map(([v,n,k])=>{const fx=k==='road'?f[0]:f[1];if(!v||n<=0)return {c:0,T:0,load:0,cap:0,fx};const c=Math.floor(n*v.avail+1e-9),T=cycleH(v,C.TRIP_KM,fx),load=paxPerTrip(v.pax);return {c,T,load,cap:c*load/T,fx}});
+ const T1=terms([1,1]),Tr=terms([fr0,fb0]);
+ let volume=0,peak=0,wnum=0,wden=0,worst=0;
+ for(const [st,dem] of Object.entries(C.DEMAND)){
+  const TT=(tr&&tr.blocks.includes(+st))?Tr:T1,tot=TT[0].cap+TT[1].cap;
+  let bn=0,bd=0,served=0;
+  halves.forEach(([v,n],h)=>{const t=TT[h],share=tot>0?t.cap/tot:(ns+nb>0?n/(ns+nb):0),dh=dem*share;served+=Math.min(dh,t.cap);let w=0;
+   if(t.c>0){const lam=dh/t.load,a=lam*t.T,rho=a/t.c,idle=Math.max(t.c-Math.min(a,t.c),1),pick=C.DETOUR*.5*Math.sqrt(C.AREA/idle)/(v.speed_empty*t.fx)*60;
+    w=rho<1?Math.min(.5*t.T*60/t.c+pick,C.MAX_WAIT):C.MAX_WAIT;if(lam<=0)w=0}
+   else if(n>0&&dh>0)w=C.MAX_WAIT;
+   wnum+=dh*w;wden+=dh;bn+=dh*w;bd+=dh});
+  worst=Math.max(worst,bd>0?bn/bd:0);volume+=served*C.BLOCK_H;peak=Math.max(peak,served);
+ }
+ const fleet=ns+nb,avail=((sv?ns*sv.avail:0)+(bv?nb*bv.avail:0))/fleet,cost=(sv?ns*sv.cost:0)+(bv?nb*bv.cost:0);
+ const capTot=(Tr[0].cap+Tr[1].cap),rideS=sv&&ns>0?C.LONGEST_KM/(sv.speed*fr0)*60:0,rideB=bv&&nb>0?C.LONGEST_KM/(bv.speed*fb0)*60:0;
+ return {avg_wait:wden>0?wnum/wden:0,peak_wait:worst,volume,peak_pax_h:peak,avail,cost,ride_min:Math.max(rideS,rideB),capacity:capTot};
+}
+
+/* ---------- random numbers ---------- */
+function rng32(seed){let a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296}}
+function poisson(lam,r){const L=Math.exp(-lam);let k=0,p=1;do{k++;p*=r()}while(p>L);return k-1}
+
+/* ---------- street graph for the display ---------- */
+let MAPD=null,ADJ=null,SP=new Map();
+function setMap(map){MAPD=map;const N=map.nodes.length;ADJ=Array.from({length:N},()=>[]);map.edges.forEach(e=>{ADJ[e[0]].push([e[1],e[2]]);ADJ[e[1]].push([e[0],e[2]])});SP=new Map()}
+function spFrom(s){let r=SP.get(s);if(r)return r;const N=ADJ.length,dist=new Float64Array(N).fill(Infinity),pred=new Int32Array(N).fill(-1),done=new Uint8Array(N);dist[s]=0;
+ for(let it=0;it<N;it++){let u=-1,b=Infinity;for(let i=0;i<N;i++)if(!done[i]&&dist[i]<b){b=dist[i];u=i}if(u<0)break;done[u]=1;for(const [w,l] of ADJ[u]){if(dist[u]+l<dist[w]){dist[w]=dist[u]+l;pred[w]=u}}}
+ r={dist,pred};SP.set(s,r);return r}
+function pathNodes(a,b){if(a===b)return [a];const {pred}=spFrom(a),out=[b];while(out[out.length-1]!==a){const p=pred[out[out.length-1]];if(p<0)return [a,b];out.push(p)}return out.reverse()}
+function nodeAt(src,km,gr){const {dist}=spFrom(src),target=km*1000,tol=Math.max(60,.12*target),ok=[];let best=src,bd=Infinity;
+ for(let i=0;i<dist.length;i++){const d=dist[i];if(!isFinite(d))continue;const e=Math.abs(d-target);if(e<=tol)ok.push(i);if(e<bd){bd=e;best=i}}
+ return ok.length?ok[Math.floor(gr()*ok.length)]:best}
+
+/* ---------- the day simulation for one vehicle type (sim_day.simulate_type), optionally with the display log ---------- */
+function simType(v,n,share,rnd,kind,rush,disp){
+ const parties=[];
+ for(const [st,dem] of Object.entries(C.DEMAND)){const sh=share[st],rate=dem*sh/PAXMEAN,k=rate>0?poisson(rate*C.BLOCK_H,rnd):0;
+  for(let q=0;q<k;q++){const t=+st+C.BLOCK_H*rnd(),u=rnd();let acc=0,size=6;for(const [s,p] of C.PARTY){acc+=p;if(u<acc){size=s;break}}parties.push([t,size])}}
+ parties.sort((a,b)=>a[0]-b[0]);
+ const reqs=[];parties.forEach(([t,P])=>{const K=Math.ceil(P/v.pax);for(let g=0;g<K;g++)reqs.push([t,P/K,Math.floor(P/K)+(g<P%K?1:0)])});
+ const freeAt=new Float64Array(n),energy=new Float64Array(n).fill(v.cap_kwh),emax=2*C.RIDE[1]*v.power_wh_km/1000;
+ const m=reqs.length,waits=new Float64Array(m),done=new Float64Array(m),arr=new Float64Array(m),pr=new Float64Array(m);let chg=0;
+ const DW=C.DWELL_S/3600,vsegs=disp?Array.from({length:n},()=>[]):null,pax=disp?[]:null,pos=disp?Array.from({length:n},()=>Math.floor(disp.gr()*ADJ.length)):null;
+ const R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3;
+ for(let r=0;r<m;r++){
+  const t=reqs[r][0];let idleN=0,i=-1,bestE=Infinity;
+  for(let j=0;j<n;j++)if(freeAt[j]<=t){idleN++;if(energy[j]<bestE){bestE=energy[j];i=j}}
+  if(i<0){let bf=Infinity;for(let j=0;j<n;j++)if(freeAt[j]<bf){bf=freeAt[j];i=j}}
+  const start=Math.max(t,freeAt[i]),pickKm=C.DETOUR*.5*Math.sqrt(C.AREA/Math.max(idleN,1)),f=trafficF(rush,kind,start),pickH=pickKm/(v.speed_empty*f);
+  const d=C.RIDE[0]+(C.RIDE[1]-C.RIDE[0])*rnd(),empty=rnd()<C.EMPTY_SHARE;
+  const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,dur=rideH+2*DW+retH+pickH;
+  const e0=energy[i];energy[i]-=v.power_wh_km*(d*(empty?2:1)+pickKm)/1000;
+  let end=start+dur,ch=0;
+  if(energy[i]<Math.max(emax,C.CHARGE_BELOW*v.cap_kwh)){ch=v.charge_h*(1-energy[i]/v.cap_kwh);end+=ch;chg+=ch}
+  waits[r]=start-t+pickH;done[r]=start+dur;arr[r]=t;pr[r]=reqs[r][1];
+  if(disp){const cap=v.cap_kwh,here=pos[i],origin=nodeAt(here,pickKm,disp.gr),dest=nodeAt(origin,d,disp.gr);
+   const t1=start+pickH,t2=t1+DW,t3=t2+rideH,t4=t3+DW,t5=t4+retH,eA=(e0-v.power_wh_km*pickKm/1000)/cap,eB=eA-v.power_wh_km*d/1000/cap,sg=vsegs[i];
+   sg.push([R(start),R(t1),1,pathNodes(here,origin),R3(e0/cap),R3(eA)]);sg.push([R(t1),R(t2),2,[origin],R3(eA),R3(eA)]);
+   sg.push([R(t2),R(t3),3,pathNodes(origin,dest),R3(eA),R3(eB)]);sg.push([R(t3),R(t4),4,[dest],R3(eB),R3(eB)]);
+   let last=dest,eNow=eB;
+   if(empty){const back=nodeAt(dest,d,disp.gr);eNow=eB-v.power_wh_km*d/1000/cap;sg.push([R(t4),R(t5),5,pathNodes(dest,back),R3(eB),R3(eNow)]);last=back}
+   if(ch>0)sg.push([R(t5),R(t5+ch),6,[last],R3(eNow),1]);
+   pos[i]=last;pax.push([R(t),reqs[r][2],origin,dest,R(t1),R(t3),i,Math.round(waits[r]*6000)/100,done[r]<=24?1:0]);
+  }
+  if(ch>0)energy[i]=v.cap_kwh;freeAt[i]=end;
+ }
+ return {arr,waits,pr,done,chg,vsegs,pax};
+}
+function dayStats(parts,vehH){
+ let A=[],W=[],P=[],D=[];let chg=0;parts.forEach(p=>{A=A.concat(Array.from(p.arr));W=W.concat(Array.from(p.waits));P=P.concat(Array.from(p.pr));D=D.concat(Array.from(p.done));chg+=p.chg});
+ let vol=0,sw=0,sp=0,over=0;const bn=new Array(12).fill(0),bd=new Array(12).fill(0);
+ for(let i=0;i<A.length;i++){if(D[i]<=24)vol+=P[i];sw+=W[i]*P[i];sp+=P[i];if(W[i]*60>5)over++;const b=Math.floor(A[i]/C.BLOCK_H);bn[b]+=W[i]*P[i];bd[b]+=P[i]}
+ let peak=0;for(let b=0;b<12;b++)if(bd[b]>0)peak=Math.max(peak,bn[b]/bd[b]*60);
+ return {volume:vol,avg_wait:sp>0?sw/sp*60:0,peak_wait:peak,over5:A.length?over/A.length*100:0,avail:1-chg/vehH,requests:A.length,people:sp};
+}
+function runDay(cfg,rep,disp){
+ const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,sh=shares(sv,cfg.ns,bv,cfg.nb,rush),shB={};for(const k in sh)shB[k]=1-sh[k];
+ const rnd=rng32(1000+rep),gr=disp?rng32(777+rep):null,parts=[],types=[];let vehH=0;
+ [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null));types.push([v,n,k]);vehH+=n*24});
+ const stats=dayStats(parts,vehH);
+ if(!disp)return stats;
+ const fleets=[],veh=[],allpax=[];let off=0;
+ parts.forEach((p,ti)=>{const [v,n,k]=types[ti];fleets.push({kind:k,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(paxPerTrip(v.pax)*100)/100});
+  for(let i=0;i<n;i++)veh.push([ti,p.vsegs[i].length?p.vsegs[i][0][3][0]:0,p.vsegs[i]]);p.pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n});
+ allpax.sort((a,b)=>a[0]-b[0]);
+ return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep}};
+}
+/* 200 days (no display), then the typical and worst days with the display log */
+function runCustom(cfg,reps,onProgress){
+ reps=reps||200;const peaks=[],agg={volume:0,avg_wait:0,peak_wait:0,avail:0,over5:0};
+ for(let r=0;r<reps;r++){const s=runDay(cfg,r,false);peaks.push(s.peak_wait);for(const k in agg)agg[k]+=s[k]/reps}
+ const sorted=peaks.slice().sort((a,b)=>a-b),med=reps%2?sorted[(reps-1)/2]:.5*(sorted[reps/2-1]+sorted[reps/2]);
+ let typ=0,bd=Infinity,worst=0;peaks.forEach((p,i)=>{const d=Math.abs(p-med);if(d<bd){bd=d;typ=i}if(p>peaks[worst])worst=i});
+ return {avg200:agg,reps:{typical:typ,worst},peaks};
+}
+function modelFor(cfg){const sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null;return modelEval(sv,cfg.ns,bv,cfg.nb,!!cfg.rush)}
+root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,setMap};
+})(typeof window!=='undefined'?window:globalThis);
+
+</script>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const NAMES=['1 Reference mixed','2 Small shuttles only','3 Two-seat shuttles only','4 Bikes only','5 Mixed, fast motor'];
+const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet'];
+const ST_NAMES=['Idle','Driving to passenger','Boarding','Carrying passengers','Dropping off','Driving empty','Charging'];
+let MAP,IDX,RUN=null,CACHE={},view={cx:0,cy:0,k:1,fit:1},W=0,H=0,DPR=1,time=8,playing=false,lastTs=0,speed=6;
+const sel={arch:0,scn:'normal',run:'typical'};
+let showB=true,showR=true,tokens={};
+const cvs=$('map'),ctx=cvs.getContext('2d');
+let statLayer=document.createElement('canvas'),statDirty=true;
+const edgeLine=new Map();
+function readTokens(){const cs=getComputedStyle(document.documentElement);['--map-ground','--map-bld','--map-water','--map-street','--map-street-edge','--map-major','--map-label','--map-ring','--carry','--empty','--idle','--charge','--wait-ok','--wait-mid','--wait-bad','--ink','--ink-2','--ink-3','--line','--panel','--bg','--accent','--good','--bad','--warn'].forEach(n=>tokens[n]=cs.getPropertyValue(n).trim());statDirty=true}
+const isDark=()=>{const t=document.documentElement.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches};
+new MutationObserver(()=>{readTokens();drawAll()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{readTokens();drawAll()});
+
+/* ---------- loading ---------- */
+async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+async function init(){
+  readTokens();
+  try{[MAP,IDX]=await Promise.all([getJSON('map.json'),getJSON('index.json')])}catch(e){$('loading').textContent='Could not load the data files ('+e.message+').';return}
+  const N=MAP.nodes;
+  MAP.edges.forEach(e=>{const a=e[0],b=e[1];let pts=e[3]||[N[a],N[b]];if(e[3]){const L=e[3],h=Math.hypot;if(h(L[0][0]-N[b][0],L[0][1]-N[b][1])+h(L[L.length-1][0]-N[a][0],L[L.length-1][1]-N[a][1])<h(L[0][0]-N[a][0],L[0][1]-N[a][1])+h(L[L.length-1][0]-N[b][0],L[L.length-1][1]-N[b][1])){pts=L.slice().reverse();e[3]=pts}}edgeLine.set(a*4096+b,pts);edgeLine.set(b*4096+a,pts.slice().reverse())});
+  FleetSim.setMap(MAP);buildSeg();buildBuilder();buildLegend();resize();await loadRun();$('loading').hidden=true;
+  requestAnimationFrame(tick);
+}
+function buildSeg(){
+  const box=$('segArch');
+  SHORT.forEach((n,i)=>{const b=document.createElement('button');b.textContent=SHORT[i];b.dataset.v=i;b.setAttribute('aria-pressed',i===0);box.appendChild(b)});
+  box.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);loadRun()});
+  $('segScn').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.scn=b.dataset.v;pressed($('segScn'),b);loadRun()});
+  $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
+}
+function pressed(box,btn){[...box.children].forEach(c=>c.setAttribute('aria-pressed',c===btn))}
+function buildLegend(){
+  const sw=(c,shape)=>shape==='bike'?`<svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="${c}"/></svg>`:`<svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="${c}"/></svg>`;
+  $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span>`;
+}
+async function loadRun(){
+  if(sel.arch===5){return loadCustom()}
+  $('builder').hidden=true;
+  const c=IDX.cases.find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  const r=c.runs.find(r=>r.label===sel.run);
+  $('loading').hidden=false;$('loading').textContent='Loading '+SHORT[sel.arch]+'…';
+  let d=CACHE[r.file];if(!d){try{d=await getJSON(r.file)}catch(e){$('loading').textContent='Could not load '+r.file;return}CACHE[r.file]=d;prep(d)}
+  RUN=d;RUN.caseInfo=c;RUN.runInfo=r;$('loading').hidden=true;
+  $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
+  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')');
+  buildStates();buildCmp();buildEvents();
+  statDirty=true;drawAll();updatePanel(true);
+}
+
+const CCACHE={};
+const OPT={s_ch:['C1','C2','C3','C4','C5','C6','C7','C8'],s_ba:['P1','P2','P3','P4','P5','P6','P7'],s_cg:['G1','G2','G3'],s_mo:['M1','M2','M3','M4'],s_au:['A3','A4','A5'],b_fr:['B1','B2','B3'],b_ba:['E1','E2','E3'],b_cg:['G1','G2'],b_mo:['K1','K2','K3']};
+function optLabel(id,k){const C=FleetSim.C;
+  if(id==='s_ch')return k+' ('+C.R_CHAS[k][0]+' seats)';if(id==='s_ba')return k+' ('+C.R_BATT[k][0]+' kWh)';if(id==='s_cg')return k+' ('+C.R_CHG[k][0]+' kW)';if(id==='s_mo')return k+' ('+C.R_MOT[k][1]+' kW)';if(id==='s_au')return k+(k==='A4'?' (SAE level 4)':k==='A3'?' (level 3)':' (level 5)');
+  if(id==='b_fr')return k+' ('+C.B_FRAME[k][0]+' seat'+(C.B_FRAME[k][0]>1?'s':'')+')';if(id==='b_ba')return k+' ('+C.B_BATT[k][0]+' kWh)';if(id==='b_cg')return k+' ('+C.B_CHG[k][0]+' kW)';return k+' ('+C.B_MOT[k][1]+' kW)'}
+function buildBuilder(){
+  Object.keys(OPT).forEach(id=>{const el=$(id);OPT[id].forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=optLabel(id,k);el.appendChild(o)});el.addEventListener('change',sumBuilder)});
+  $('ns').addEventListener('input',sumBuilder);$('nb').addEventListener('input',sumBuilder);
+  setBuilder(['C3','P2','G3','M2','A4'],10,['B2','E1','G2','K2'],10);
+  $('brun').onclick=()=>loadCustom();$('bref').onclick=()=>{setBuilder(['C3','P2','G3','M2','A4'],10,['B2','E1','G2','K2'],10);loadCustom()};
+}
+function setBuilder(sh,ns,bk,nb){['s_ch','s_ba','s_cg','s_mo','s_au'].forEach((id,i)=>$(id).value=sh[i]);['b_fr','b_ba','b_cg','b_mo'].forEach((id,i)=>$(id).value=bk[i]);$('ns').value=ns;$('nb').value=nb;sumBuilder()}
+function readCfg(){
+  const ns=Math.max(0,Math.min(80,Math.floor(+$('ns').value||0))),nb=Math.max(0,Math.min(150,Math.floor(+$('nb').value||0)));
+  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush'};
+}
+function sumBuilder(){
+  const c=readCfg(),F=FleetSim,parts=[];let cost=0;
+  if(c.ns>0){const v=F.roadVehicle(...c.shuttle);cost+=c.ns*v.cost;parts.push(`Shuttle: <b>${Math.round(v.cost/1000)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h loaded, <b>${v.speed_empty.toFixed(1)}</b> empty, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
+  if(c.nb>0){const v=F.bikeVehicle(...c.bike);cost+=c.nb*v.cost;parts.push(`Bike: <b>${(v.cost/1000).toFixed(1)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
+  $('bsum').innerHTML=(parts.join('<br>')||'Add at least one vehicle.')+(cost?`<br>Fleet cost <b>$${cost.toLocaleString('en-US')}</b>`:'');
+}
+async function loadCustom(){
+  $('builder').hidden=false;const cfg=readCfg();sumBuilder();
+  if(cfg.ns+cfg.nb<1){return}
+  playing=false;$('play').textContent='Play';
+  $('loading').hidden=false;$('loading').textContent='Simulating 200 days…';
+  await new Promise(r=>setTimeout(r,40));
+  const key=JSON.stringify(cfg);let ent=CCACHE[key];if(!ent){ent=FleetSim.runCustom(cfg,200);CCACHE[key]=ent}
+  const rep=ent.reps[sel.run],dk=key+'#'+rep;let d=CACHE[dk];if(!d){d=FleetSim.runDay(cfg,rep,true);prep(d);CACHE[dk]=d}
+  d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
+  RUN=d;$('loading').hidden=true;
+  $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+', your fleet';
+  buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
+}
+const plural=(n,w)=>n+' '+w+(n===1?'':'s');
+function fleetTitle(d){return d.fleets.map(f=>plural(f.n,f.kind==='road'?(f.seats+'-seat shuttle'):(f.seats+'-seat e-bike'))).join(' + ')}
+function fleetSub(d){return d.fleets.map(f=>f.label+' '+f.spec+', '+f.speed+' km/h, '+f.cap_kwh+' kWh, '+f.pax_per_trip+' people per trip').join(' · ')}
+
+/* ---------- prepare a run: indexes and series ---------- */
+function prep(d){
+  let vi=0;d.vnames=[];d.fleets.forEach((f,fi)=>{f.first=vi;for(let i=0;i<f.n;i++)d.vnames.push((f.kind==='road'?'S':'B')+(i+1));vi+=f.n});
+  d.veh.forEach(v=>{v[2].forEach(s=>{s.cum=null})});
+  d.pax.sort((a,b)=>a[0]-b[0]);
+  d.byBoard=d.pax.map((p,i)=>i).sort((a,b)=>d.pax[a][4]-d.pax[b][4]);
+  d.byDrop=d.pax.map((p,i)=>i).sort((a,b)=>d.pax[a][5]-d.pax[b][5]);
+  const bw=[];let cw=0,cp=0;d.byBoard.forEach(i=>{const p=d.pax[i];cw+=p[7]*p[1];cp+=p[1];bw.push([p[4],cw/cp])});d.avgCurve=bw;
+  const step=1/30,n=Math.round(24/step)+1;d.series=[];
+  for(let k=0;k<n;k++){const t=k*step;const c=[0,0,0,0];d.veh.forEach(v=>{const s=segAt(v,t);const code=s?s[2]:0;if(code===6)c[2]++;else if(code===3||code===2||code===4)c[0]++;else if(code===1||code===5)c[1]++;else c[3]++});d.series.push(c)}
+  d.maxWait=d.pax.reduce((m,p)=>Math.max(m,p[7]),0);
+  // events
+  const ev=[];d.pax.forEach((p,i)=>{ev.push([p[0],'req',i]);ev.push([p[4],'pick',i]);ev.push([p[5],'drop',i])});
+  d.veh.forEach((v,i)=>v[2].forEach(s=>{if(s[2]===6)ev.push([s[0],'chg',i,s[4]])}));
+  ev.sort((a,b)=>a[0]-b[0]);d.events=ev;
+}
+function segAt(v,t){ // segment active at time t, or null
+  const a=v[2];let lo=0,hi=a.length-1,r=-1;
+  while(lo<=hi){const m=(lo+hi)>>1;if(a[m][0]<=t){r=m;lo=m+1}else hi=m-1}
+  if(r<0)return null;const s=a[r];return t<s[1]?s:null;
+}
+function lastIdx(v,t){const a=v[2];let lo=0,hi=a.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(a[m][0]<=t){r=m;lo=m+1}else hi=m-1}return r}
+function poly(s){
+  if(s.cum)return s;const p=s[3],N=MAP.nodes;let pts=[];
+  if(p.length===1){pts=[N[p[0]]]}else{for(let i=0;i<p.length-1;i++){const l=edgeLine.get(p[i]*4096+p[i+1])||[N[p[i]],N[p[i+1]]];for(let j=(i?1:0);j<l.length;j++)pts.push(l[j])}}
+  const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  s.pts=pts;s.cum=cum;s.len=cum[cum.length-1];return s;
+}
+function along(s,u){ // position and heading at fraction u of the path
+  poly(s);const pts=s.pts;if(pts.length===1)return [pts[0][0],pts[0][1],null];
+  const d=Math.max(0,Math.min(1,u))*s.len;let lo=1,hi=pts.length-1;
+  while(lo<hi){const m=(lo+hi)>>1;if(s.cum[m]>=d)hi=m;else lo=m+1}
+  const i=lo,a=pts[i-1],b=pts[i],seg=s.cum[i]-s.cum[i-1]||1,f=(d-s.cum[i-1])/seg;
+  return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,Math.atan2(b[1]-a[1],b[0]-a[0])];
+}
+function endHeading(v,idx){for(let k=idx;k>=0;k--){const s=v[2][k];if((s[2]===1||s[2]===3||s[2]===5)&&s[3].length>1){poly(s);const p=s.pts,n=p.length;return Math.atan2(p[n-1][1]-p[n-2][1],p[n-1][0]-p[n-2][0])}}return 0}
+function vstate(v,t){ // {x,y,h,code,e,seg}
+  const N=MAP.nodes,a=v[2],idx=lastIdx(v,t);
+  if(idx<0){const n=N[v[1]];return {x:n[0],y:n[1],h:0,code:0,e:1,seg:null}}
+  const s=a[idx];
+  if(t<s[1]){const u=(t-s[0])/Math.max(s[1]-s[0],1e-9);const e=s[4]+(s[5]-s[4])*u;
+    if(s[3].length>1){const p=along(s,u);return {x:p[0],y:p[1],h:p[2],code:s[2],e,seg:s}}
+    const n=N[s[3][0]];return {x:n[0],y:n[1],h:endHeading(v,idx-1),code:s[2],e,seg:s}}
+  const last=s[3][s[3].length-1],n=N[last];return {x:n[0],y:n[1],h:endHeading(v,idx),code:0,e:s[5],seg:null};
+}
+
+/* ---------- view ---------- */
+function resize(){const r=$('mapbox').getBoundingClientRect();DPR=Math.min(window.devicePixelRatio||1,2);W=r.width;H=r.height;cvs.width=Math.round(W*DPR);cvs.height=Math.round(H*DPR);statLayer.width=cvs.width;statLayer.height=cvs.height;
+  const R=MAP?MAP.radius-190:860;view.fit=Math.min(W,H)/(2*R);view.hx=-40;view.hy=170;if(!view.set){view.k=view.fit;view.cx=view.hx;view.cy=view.hy;view.set=true}statDirty=true;drawAll();drawCharts()}
+window.addEventListener('resize',()=>{if(MAP)resize()});
+const sx=x=>(x-view.cx)*view.k+W/2, sy=y=>H/2-(y-view.cy)*view.k;
+function zoomAt(f,px,py){const wx=(px-W/2)/view.k+view.cx,wy=-(py-H/2)/view.k+view.cy;view.k=Math.max(view.fit*0.7,Math.min(view.fit*14,view.k*f));view.cx=wx-(px-W/2)/view.k;view.cy=wy+(py-H/2)/view.k;statDirty=true;drawAll()}
+$('zin').onclick=()=>zoomAt(1.5,W/2,H/2);$('zout').onclick=()=>zoomAt(1/1.5,W/2,H/2);$('zfit').onclick=()=>{view.k=view.fit;view.cx=view.hx;view.cy=view.hy;statDirty=true;drawAll()};
+$('tbld').onclick=e=>{showB=!showB;e.currentTarget.setAttribute('aria-pressed',showB);statDirty=true;drawAll()};
+$('troute').onclick=e=>{showR=!showR;e.currentTarget.setAttribute('aria-pressed',showR);drawAll()};
+cvs.addEventListener('wheel',e=>{e.preventDefault();const r=cvs.getBoundingClientRect();zoomAt(e.deltaY<0?1.2:1/1.2,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+let drag=null;const pts=new Map();let pinch=0;
+cvs.addEventListener('pointerdown',e=>{cvs.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy};cvs.classList.add('drag');if(pts.size===2){const a=[...pts.values()];pinch=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])}});
+cvs.addEventListener('pointermove',e=>{
+  if(pts.has(e.pointerId))pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size===2){const a=[...pts.values()],d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);if(pinch){const r=cvs.getBoundingClientRect();zoomAt(d/pinch,(a[0][0]+a[1][0])/2-r.left,(a[0][1]+a[1][1])/2-r.top)}pinch=d;return}
+  if(drag&&pts.has(e.pointerId)){view.cx=drag.cx-(e.clientX-drag.x)/view.k;view.cy=drag.cy+(e.clientY-drag.y)/view.k;statDirty=true;drawAll()}
+  else hover(e)});
+const endp=e=>{pts.delete(e.pointerId);if(!pts.size){drag=null;cvs.classList.remove('drag')}pinch=0};
+cvs.addEventListener('pointerup',endp);cvs.addEventListener('pointercancel',endp);cvs.addEventListener('pointerleave',()=>{$('tip').hidden=true});
+
+/* ---------- drawing the map ---------- */
+function nightAlpha(t){const h=t%24;let a=0;if(h<5)a=1;else if(h<7)a=1-(h-5)/2;else if(h>21)a=1;else if(h>19)a=(h-19)/2;return a*(isDark()?0.25:0.32)}
+function drawStatic(){
+  const g=statLayer.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,W,H);
+  g.fillStyle=tokens['--map-ground'];g.fillRect(0,0,W,H);
+  const path=(poly,close)=>{g.beginPath();poly.forEach((p,i)=>i?g.lineTo(sx(p[0]),sy(p[1])):g.moveTo(sx(p[0]),sy(p[1])));if(close)g.closePath()};
+  g.fillStyle=tokens['--map-water'];MAP.water.forEach(p=>{path(p,true);g.fill()});
+  if(showB){g.fillStyle=tokens['--map-bld'];MAP.buildings.forEach(p=>{path(p,true);g.fill()})}
+  // service area: outside the circle fades
+  g.save();g.beginPath();g.rect(0,0,W,H);g.arc(sx(0),sy(0),MAP.radius*view.k,0,Math.PI*2,true);g.fillStyle=isDark()?'rgba(6,9,12,.55)':'rgba(238,240,242,.62)';g.fill('evenodd');g.restore();
+  const N=MAP.nodes;
+  const drawE=(w,col,maj)=>{g.lineCap='round';g.lineJoin='round';g.strokeStyle=col;MAP.edges.forEach(e=>{if(maj!==undefined&&((e[4]>0)!==maj))return;path(e[3]||[N[e[0]],N[e[1]]],false);g.lineWidth=w(e);g.stroke()})};
+  const wk=e=>Math.max(1.6,(e[4]>0?11:7.5)*view.k);
+  drawE(e=>wk(e)+1.4,tokens['--map-street-edge']);
+  drawE(e=>wk(e),tokens['--map-street']);
+  // service boundary
+  g.setLineDash([8,6]);g.lineWidth=1.6;g.strokeStyle=tokens['--map-ring'];g.beginPath();g.arc(sx(0),sy(0),MAP.radius*view.k,0,Math.PI*2);g.stroke();g.setLineDash([]);
+  // labels
+  g.font='600 11px '+getComputedStyle(document.body).getPropertyValue('--f-head');g.textBaseline='middle';
+  const placed=[];MAP.landmarks.forEach(l=>{const x=sx(l[1]),y=sy(l[2]);g.fillStyle=tokens['--map-ring'];g.beginPath();g.arc(x,y,3.5,0,7);g.fill();
+    const tw=g.measureText(l[0]).width,bx={x:x+7,y:y-7,w:tw,h:14};if(placed.some(p=>p.x<bx.x+bx.w&&bx.x<p.x+p.w&&p.y<bx.y+bx.h&&bx.y<p.y+p.h))return;placed.push(bx);
+    g.lineWidth=3.5;g.strokeStyle=tokens['--map-ground'];g.strokeText(l[0],x+7,y);g.fillStyle=tokens['--map-label'];g.fillText(l[0],x+7,y)});
+  statDirty=false;
+}
+function waitColor(m){return m>5?tokens['--wait-bad']:m>2?tokens['--wait-mid']:tokens['--wait-ok']}
+function roundRect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+let vis=[]; // visible vehicle screen data for hover
+function drawDynamic(){
+  ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(statLayer,0,0);ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(!RUN)return;
+  const na=nightAlpha(time);if(na>0){ctx.fillStyle='rgba(8,14,40,'+na+')';ctx.fillRect(0,0,W,H)}
+  const d=RUN,N=MAP.nodes;vis=[];
+  const sts=d.veh.map(v=>vstate(v,time));
+  // routes of vehicles carrying someone
+  if(showR){ctx.lineCap='round';ctx.lineJoin='round';
+    sts.forEach((s,i)=>{if(!s.seg||(s.code!==3&&s.code!==1))return;poly(s.seg);const P=s.seg.pts;const u=(time-s.seg[0])/Math.max(s.seg[1]-s.seg[0],1e-9);const dd=u*s.seg.len;
+      ctx.beginPath();let started=false;for(let k=0;k<P.length;k++){if(s.seg.cum[k]<dd)continue;if(!started){ctx.moveTo(sx(s.x),sy(s.y));started=true}ctx.lineTo(sx(P[k][0]),sy(P[k][1]))}
+      ctx.setLineDash(s.code===1?[3,4]:[]);ctx.strokeStyle=s.code===3?tokens['--carry']:tokens['--empty'];ctx.globalAlpha=.75;ctx.lineWidth=s.code===3?2.4:1.6;ctx.stroke();ctx.globalAlpha=1;ctx.setLineDash([])})}
+  // waiting passengers
+  const waiting=[];for(let i=0;i<d.pax.length;i++){const p=d.pax[i];if(p[0]>time)break;if(p[4]>time)waiting.push(i)}
+  const tms=performance.now()/1000;
+  waiting.forEach(i=>{const p=d.pax[i],n=N[p[2]],x=sx(n[0]),y=sy(n[1]),w=(time-p[0])*60,c=waitColor(w);
+    // link to assigned vehicle when it is on its way
+    const v=d.veh[p[6]],s=sts[p[6]];if(s.code===1&&s.seg&&Math.abs(s.seg[1]-p[4])<1e-4){ctx.setLineDash([2,3]);ctx.strokeStyle=c;ctx.lineWidth=1;ctx.globalAlpha=.8;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(sx(s.x),sy(s.y));ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1}
+    const pulse=(Math.sin(tms*(w>5?7:3)+i)*.5+.5);const r=9+Math.min(w,8)*.35;
+    ctx.beginPath();ctx.arc(x,y,r+3+pulse*3,0,7);ctx.strokeStyle=c;ctx.globalAlpha=.45*(1-pulse*.5);ctx.lineWidth=1.5;ctx.stroke();ctx.globalAlpha=1;
+    ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fillStyle=c;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle=isDark()?'#0C1015':'#15191E';ctx.stroke();
+    ctx.fillStyle=(w>2&&w<=5)||c===tokens['--wait-ok']?'#15191E':'#fff';ctx.font='700 11px '+getComputedStyle(document.body).getPropertyValue('--f-num');ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(p[1],x,y+.5)});
+  // vehicles
+  d.veh.forEach((v,i)=>{const s=sts[i],f=d.fleets[v[0]],shuttle=f.kind==='road';
+    let x=sx(s.x),y=sy(s.y);if(s.code===0||s.code===6||s.code===2||s.code===4){const j=((i*37)%7-3)*2.2;x+=j;y+=((i*53)%5-2)*2.2}
+    if(x<-20||y<-20||x>W+20||y>H+20)return;
+    const col=s.code===3||s.code===2||s.code===4?tokens['--carry']:s.code===1||s.code===5?tokens['--empty']:s.code===6?tokens['--charge']:tokens['--idle'];
+    const zf=Math.max(1,Math.min(2.2,view.k/view.fit*.9));const len=shuttle?Math.min(46,(17+f.seats*1.6)*zf):Math.min(24,14*zf);
+    const wid=shuttle?len*.5:len;
+    if(s.code===6){const pulse=Math.sin(tms*4+i)*.5+.5;ctx.beginPath();ctx.arc(x,y,len*.8+pulse*4,0,7);ctx.fillStyle=tokens['--charge'];ctx.globalAlpha=.18+.12*pulse;ctx.fill();ctx.globalAlpha=1}
+    ctx.save();ctx.translate(x,y);ctx.rotate(-(s.h||0));
+    ctx.fillStyle=col;ctx.strokeStyle=isDark()?'#0C1015':'#FFFFFF';ctx.lineWidth=1.6;
+    if(shuttle){roundRect(ctx,-len/2,-wid/2,len,wid,wid*.42);ctx.fill();ctx.stroke();ctx.fillStyle=isDark()?'#0C1015':'#fff';ctx.globalAlpha=.85;ctx.fillRect(len*.14,-wid*.3,len*.16,wid*.6);ctx.globalAlpha=1}
+    else{ctx.beginPath();ctx.arc(0,0,len/2,0,7);ctx.fill();ctx.stroke();ctx.fillStyle=isDark()?'#0C1015':'#fff';ctx.beginPath();ctx.moveTo(len*.5,0);ctx.lineTo(len*.12,-len*.2);ctx.lineTo(len*.12,len*.2);ctx.closePath();ctx.fill()}
+    ctx.restore();
+    // battery ring
+    const e=Math.max(0,Math.min(1,s.e));const rr=len*.5+3.4;ctx.beginPath();ctx.arc(x,y,rr,-Math.PI/2,-Math.PI/2+Math.PI*2*e);ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle=e<.2?tokens['--wait-bad']:e<.4?tokens['--wait-mid']:tokens['--charge'];ctx.globalAlpha=.9;ctx.stroke();ctx.globalAlpha=1;
+    if(s.code===6){ctx.fillStyle='#fff';ctx.font='700 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⚡',x,y+.5)}
+    if(s.code===3||s.code===2||s.code===4){const pk=riders(v,i,s);if(pk>0){ctx.fillStyle='#fff';ctx.font='700 11px '+getComputedStyle(document.body).getPropertyValue('--f-num');ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(pk,x-len*.1,y+.5)}}
+    vis.push({i,x,y,r:Math.max(10,len*.7),s});
+  });
+  ctx.textAlign='start';
+}
+function riders(v,i,s){const d=RUN;if(!s.seg)return 0;// find passenger of this vehicle whose ride matches
+  const t=s.seg[0];let lo=0,hi=d.byBoard.length-1;
+  for(const k of d.byBoard){}return s.seg.pk??(s.seg.pk=findRiders(i,s.seg))}
+function findRiders(i,seg){const d=RUN;for(let k=0;k<d.pax.length;k++){const p=d.pax[k];if(p[6]===i&&(Math.abs(p[4]-seg[0])<1e-3||Math.abs(p[4]+1/60-seg[0])<1e-3||Math.abs(p[5]-seg[1])<1e-3||Math.abs(p[5]-1/60-seg[0])<2e-3||(p[4]<=seg[0]+1e-4&&p[5]>=seg[1]-1e-4&&p[6]===i&&seg[2]!==1)))return p[1]}return 0}
+
+/* ---------- panel ---------- */
+const fmt=t=>{t=((t%24)+24)%24;const h=Math.floor(t),m=Math.floor((t-h)*60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')};
+function buildStates(){
+  $('states').innerHTML=[['Carrying','--carry','sCarry'],['Driving empty','--empty','sEmpty'],['Idle','--idle','sIdle'],['Charging','--charge','sChg']].map(a=>`<div class="stat"><span><i class="dot" style="background:var(${a[1]})"></i>${a[0]}</span><b id="${a[2]}">0</b></div>`).join('');
+}
+function buildCmp(){
+  const c=RUN.caseInfo,r=RUN.runInfo;const mod=c.custom?{wait_model:c.mod.avg_wait,worst_model:c.mod.peak_wait,vol_model:c.mod.volume,avail_model:c.mod.avail}:IDX.model.find(m=>m.scenario===sel.scn&&m.arch===NAMES[sel.arch]);
+  const lim=IDX.requirement.wait_min;const cell=(v,bad)=>`<td class="${bad===true?'bad':bad===false?'':bad}">${v}</td>`;
+  const pk=[mod.worst_model,c.avg200.peak_wait,r.summary.peak_wait];
+  const rows=[
+    ['Avg wait (min)',mod.wait_model.toFixed(1),c.avg200.avg_wait.toFixed(1),r.summary.avg_wait.toFixed(1),null],
+    ['Peak wait, busiest 2 h (min)',pk.map(v=>[v.toFixed(1),v>lim?'bad':v>lim*.8?'warn':'good'])],
+    ['People served per day',Math.round(mod.vol_model),Math.round(c.avg200.volume),Math.round(r.summary.volume),null],
+    ['Vehicle availability',mod.avail_model.toFixed(2),c.avg200.avail.toFixed(2),r.summary.avail.toFixed(2),null],
+    ['Rides waiting over 5 min','–',c.avg200.over5.toFixed(0)+'%',r.summary.over5.toFixed(0)+'%',null]];
+  let h='<tr><th></th><th>Model</th><th>200 days</th><th>This day</th></tr>';
+  rows.forEach(a=>{if(Array.isArray(a[1])){h+=`<tr><td>${a[0]}</td>`+a[1].map(x=>`<td class="${x[1]}">${x[0]}</td>`).join('')+'</tr>'}else h+=`<tr><td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td><td>${a[3]}</td></tr>`});
+  $('cmp').innerHTML=h;
+  const worstSim=r.summary.peak_wait,mm=mod.worst_model;
+  let msg;
+  if(worstSim<=lim)msg=`<span><b>Meets the 5 min wait.</b> The busiest 2 h block averages ${worstSim.toFixed(1)} min in this run. The model says ${mm.toFixed(1)} min.</span>`;
+  else msg=`<span><b>Misses the 5 min wait in the simulation</b> (${worstSim.toFixed(1)} min in the busiest block) while the model says ${mm.toFixed(1)} min. Watch the queue of passengers build when most vehicles are busy or charging.</span>`;
+  if(c.custom){const M=c.mod,ok=(b,t)=>`<br>${b?'Meets':'Misses'} ${t}`;msg+='<span style="display:block;margin-top:6px">'+
+    '<b>200-day check</b>'+ok(c.avg200.peak_wait<=lim,'the 5 min wait (average peak wait '+c.avg200.peak_wait.toFixed(1)+' min)')+ok(M.ride_min<=IDX.requirement.ride_min,'the 7 min ride (longest ride '+M.ride_min.toFixed(1)+' min)')+ok(c.avg200.volume>=IDX.requirement.volume,'1,500 people per day ('+Math.round(c.avg200.volume)+')')+ok(M.peak_pax_h>=150&&M.capacity>=150,'the 150 people per hour peak (model '+Math.round(M.peak_pax_h)+')')+'</span>'}
+  $('verdict').innerHTML=msg;
+}
+let evPtr=0,shown=[];
+function buildEvents(){evPtr=0;shown=[];$('ticker').innerHTML=''}
+function evText(e){const d=RUN,p=e[1]==='chg'?null:d.pax[e[2]];
+  if(e[1]==='req')return [e[0],'Request: party of '+p[1]+' (vehicle '+d.vnames[p[6]]+' assigned)',''];
+  if(e[1]==='pick')return [e[0],d.vnames[p[6]]+' picks up '+p[1]+' after '+p[7].toFixed(1)+' min',p[7]>5?'bad':''];
+  if(e[1]==='drop')return [e[0],d.vnames[p[6]]+' drops off '+p[1],''];
+  return [e[0],d.vnames[e[2]]+' goes to charge at '+Math.round(e[3]*100)+'% battery','chg'];}
+function updateTicker(){
+  const d=RUN;let lo=0,hi=d.events.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(d.events[m][0]<=time){r=m;lo=m+1}else hi=m-1}
+  const ul=$('ticker');
+  if(r<evPtr-1||r-evPtr>40){evPtr=r+1;shown=[];const from=Math.max(0,r-6);for(let k=from;k<=r;k++)shown.push(k);evPtr=r+1;render()}
+  else if(r>=evPtr){for(let k=evPtr;k<=r;k++)shown.push(k);evPtr=r+1;shown=shown.slice(-7);render()}
+  function render(){ul.innerHTML=shown.slice().reverse().map(k=>{const t=evText(d.events[k]);return `<li class="${t[2]}"><time>${fmt(t[0])}</time><span>${t[1]}</span></li>`}).join('')}
+}
+function updatePanel(force){
+  if(!RUN)return;const d=RUN;
+  $('clock').firstChild.nodeValue=fmt(time);$('timeval').textContent=fmt(time);$('scrub').value=time;
+  const blk=Math.floor(time/2)*2;const tr=d.traffic&&d.traffic.blocks.includes(blk);
+  $('trafficChip').hidden=!(d.traffic&&tr);if(d.traffic&&tr)$('trafficTxt').textContent='Rush-hour traffic: shuttles at '+Math.round(d.traffic.road*100)+'%, bikes at '+Math.round(d.traffic.bike*100)+'% of normal speed';
+  const dem=IDX.demand[String(blk)];$('blockTxt').textContent=fmt(blk)+' to '+fmt(blk+2)+', demand '+dem+' people/h';
+  let c=[0,0,0,0],eSum=0;d.veh.forEach(v=>{const s=vstate(v,time);eSum+=Math.max(0,Math.min(1,s.e));const code=s.code;if(code===6)c[2]++;else if(code===3||code===2||code===4)c[0]++;else if(code===1||code===5)c[1]++;else c[3]++});
+  $('sCarry').textContent=c[0];$('sEmpty').textContent=c[1];$('sChg').textContent=c[2];$('sIdle').textContent=c[3];$('lBatt').textContent=Math.round(100*eSum/d.veh.length)+'%';
+  let w=0,lw=0;for(let i=0;i<d.pax.length;i++){const p=d.pax[i];if(p[0]>time)break;if(p[4]>time){w++;lw=Math.max(lw,(time-p[0])*60)}}
+  $('lWait').textContent=w;$('lLong').textContent=lw.toFixed(1)+' min';
+  let lo=0,hi=d.byDrop.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(d.pax[d.byDrop[m]][5]<=time){r=m;lo=m+1}else hi=m-1}
+  let people=0;for(let k=0;k<=r;k++)people+=d.pax[d.byDrop[k]][1];$('lDone').textContent=r+1;$('lPeople').textContent=people;
+  lo=0;hi=d.avgCurve.length-1;r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(d.avgCurve[m][0]<=time){r=m;lo=m+1}else hi=m-1}
+  $('lAvg').textContent=(r<0?0:d.avgCurve[r][1]).toFixed(1)+' min';
+  updateTicker();
+}
+
+/* ---------- charts ---------- */
+const c1=$('c1'),c2=$('c2');
+function setupChart(c,h){const r=c.parentElement.getBoundingClientRect();const w=r.width-24;c.style.height=h+'px';c.width=Math.round(w*DPR);c.height=Math.round(h*DPR);return [w,h]}
+const M={l:44,r:12,t:10,b:24};
+const yS=m=>Math.sqrt(Math.min(m,160)); // wait axis is square-root scaled so 5 min stays readable beside 150 min
+function drawCharts(){
+  if(!RUN)return;const d=RUN;
+  let [w,h]=setupChart(c1,230);let g=c1.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
+  const x=t=>M.l+(w-M.l-M.r)*t/24;
+  const ymaxv=Math.max(10,Math.ceil(d.maxWait/5)*5);const yMax=yS(Math.min(ymaxv,160));const y=m=>h-M.b-(h-M.t-M.b)*yS(m)/yMax;
+  const font=getComputedStyle(document.body).getPropertyValue('--f-num');g.font='11px '+font;
+  // traffic hours
+  if(d.traffic){g.fillStyle=tokens['--wait-bad'];g.globalAlpha=.09;d.traffic.blocks.forEach(b=>{g.fillRect(x(b),M.t,x(b+2)-x(b),h-M.t-M.b)});g.globalAlpha=1}
+  // demand bars (hourly passengers per hour, scaled to 40% of height)
+  const dmax=Math.max(...Object.values(IDX.demand));g.fillStyle=tokens['--ink-3'];g.globalAlpha=.16;Object.entries(IDX.demand).forEach(([b,v])=>{const bh=(h-M.t-M.b)*.4*v/dmax;g.fillRect(x(+b)+1,h-M.b-bh,x(+b+2)-x(+b)-2,bh)});g.globalAlpha=1;
+  // grid and axes
+  g.strokeStyle=tokens['--line'];g.fillStyle=tokens['--ink-3'];g.lineWidth=1;g.textAlign='right';g.textBaseline='middle';
+  const ticks=[0,5,10,20,40,80,160].filter(v=>v<=Math.min(ymaxv,160));ticks.forEach(v=>{g.beginPath();g.moveTo(M.l,y(v));g.lineTo(w-M.r,y(v));g.stroke();g.fillText(v,M.l-6,y(v))});
+  g.save();g.translate(11,(M.t+h-M.b)/2);g.rotate(-Math.PI/2);g.textAlign='center';g.fillText('wait (min)',0,0);g.restore();
+  g.textAlign='center';g.textBaseline='top';for(let t=0;t<=24;t+=2){g.fillText(String(t).padStart(2,'0'),x(t),h-M.b+6)}
+  // requirement
+  g.setLineDash([6,4]);g.strokeStyle=tokens['--wait-bad'];g.lineWidth=1.4;g.beginPath();g.moveTo(M.l,y(5));g.lineTo(w-M.r,y(5));g.stroke();g.setLineDash([]);
+  g.fillStyle=tokens['--wait-bad'];g.textAlign='left';g.textBaseline='bottom';g.fillText('5 min requirement',M.l+6,y(5)-3);
+  // dots
+  const colOk=tokens['--carry'],colBad=tokens['--wait-bad'];
+  d.pax.forEach(p=>{const past=p[0]<=time;g.globalAlpha=past?.78:.14;g.fillStyle=p[7]>5?colBad:colOk;g.beginPath();g.arc(x(p[0]),y(p[7]),past?2.6:2,0,7);g.fill()});g.globalAlpha=1;
+  // peak-wait per block as a step line
+  const blkv={};d.pax.forEach(p=>{const b=Math.floor(p[0]/2)*2;(blkv[b]=blkv[b]||[0,0]);blkv[b][0]+=p[7]*p[1];blkv[b][1]+=p[1]});
+  g.strokeStyle=tokens['--ink'];g.lineWidth=2;g.beginPath();let first=true;Object.keys(blkv).map(Number).sort((a,b)=>a-b).forEach(b=>{const v=blkv[b][0]/blkv[b][1];const yy=y(v);if(first){g.moveTo(x(b),yy);first=false}else g.lineTo(x(b),yy);g.lineTo(x(b+2),yy)});g.stroke();
+  g.fillStyle=tokens['--ink'];g.textAlign='right';g.textBaseline='bottom';g.fillText('average wait in each 2 h block',w-M.r-4,M.t+12);
+  // playhead
+  g.strokeStyle=tokens['--accent'];g.lineWidth=2;g.beginPath();g.moveTo(x(time),M.t);g.lineTo(x(time),h-M.b);g.stroke();
+  c1._geom={x0:M.l,x1:w-M.r,w};
+  // chart 2: stacked area
+  [w,h]=setupChart(c2,170);g=c2.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
+  const total=d.veh.length,xx=t=>M.l+(w-M.l-M.r)*t/24,yy=v=>h-M.b-(h-M.t-M.b)*v/total;
+  if(d.traffic){g.fillStyle=tokens['--wait-bad'];g.globalAlpha=.09;d.traffic.blocks.forEach(b=>{g.fillRect(xx(b),M.t,xx(b+2)-xx(b),h-M.t-M.b)});g.globalAlpha=1}
+  const cols=[tokens['--carry'],tokens['--empty'],tokens['--charge'],tokens['--idle']],order=[0,1,2,3];
+  const stack=(k)=>{g.beginPath();d.series.forEach((s,i)=>{let top=0;for(let q=0;q<=k;q++)top+=s[order[q]];const px=xx(i/30);i?g.lineTo(px,yy(top)):g.moveTo(px,yy(top))});for(let i=d.series.length-1;i>=0;i--){let bot=0;for(let q=0;q<k;q++)bot+=d.series[i][order[q]];g.lineTo(xx(i/30),yy(bot))}g.closePath()};
+  for(let k=3;k>=0;k--){stack(k);g.fillStyle=cols[order[k]];g.globalAlpha=k===3?.45:.9;g.fill();g.globalAlpha=1;g.strokeStyle=tokens['--panel'];g.lineWidth=1;g.stroke()}
+  g.strokeStyle=tokens['--line'];g.fillStyle=tokens['--ink-3'];g.font='11px '+font;g.textAlign='right';g.textBaseline='middle';
+  [0,Math.round(total/2),total].forEach(v=>{g.fillText(v,M.l-6,yy(v))});g.save();g.translate(11,(M.t+h-M.b)/2);g.rotate(-Math.PI/2);g.textAlign='center';g.fillText('vehicles',0,0);g.restore();
+  g.textAlign='center';g.textBaseline='top';for(let t=0;t<=24;t+=2){g.fillText(String(t).padStart(2,'0'),xx(t),h-M.b+6)}
+  // direct labels
+  const lab=[['carrying',0,cols[0]],['driving empty',1,cols[1]],['charging',2,cols[2]],['idle',3,cols[3]]];
+  g.textAlign='left';g.textBaseline='middle';lab.forEach(l=>{ /* labels in header via legend */ });
+  g.strokeStyle=tokens['--accent'];g.lineWidth=2;g.beginPath();g.moveTo(xx(time),M.t);g.lineTo(xx(time),h-M.b);g.stroke();
+  c2._geom={x0:M.l,x1:w-M.r,w};
+}
+function scrubFrom(c,e){const r=c.getBoundingClientRect(),g=c._geom;if(!g)return;const px=e.clientX-r.left;time=Math.max(0,Math.min(24,(px-g.x0)/(g.x1-g.x0)*24));drawAll();updatePanel()}
+[c1,c2].forEach(c=>{let down=false;c.addEventListener('pointerdown',e=>{down=true;c.setPointerCapture(e.pointerId);scrubFrom(c,e)});c.addEventListener('pointermove',e=>{if(down)scrubFrom(c,e)});c.addEventListener('pointerup',()=>down=false);c.addEventListener('pointercancel',()=>down=false)});
+
+/* ---------- hover ---------- */
+function hover(e){
+  if(!RUN)return;const r=cvs.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;
+  let best=null,bd=1e9;vis.forEach(v=>{const dd=Math.hypot(v.x-px,v.y-py);if(dd<v.r&&dd<bd){bd=dd;best=v}});
+  const tip=$('tip');if(!best){tip.hidden=true;return}
+  const d=RUN,v=d.veh[best.i],f=d.fleets[v[0]],s=best.s;
+  let rides=0;v[2].forEach(sg=>{if(sg[2]===1&&sg[0]<=time)rides++});
+  tip.innerHTML=`<b>${d.vnames[best.i]}</b> · ${f.kind==='road'?f.seats+'-seat shuttle':'e-bike'} ${f.spec}<br>${ST_NAMES[s.code]}<br>Battery <span class="m">${Math.round(Math.max(0,Math.min(1,s.e))*100)}%</span> of ${f.cap_kwh} kWh<br>Pickups so far <span class="m">${rides}</span>`;
+  tip.hidden=false;const bx=$('mapbox').getBoundingClientRect();let tx=px+14,ty=py+14;if(tx+190>bx.width)tx=px-190;if(ty+90>bx.height)ty=py-90;tip.style.left=tx+'px';tip.style.top=ty+'px';
+}
+
+/* ---------- loop and controls ---------- */
+function drawAll(){if(!MAP)return;if(statDirty)drawStatic();drawDynamic();drawCharts()}
+let chartTick=0;
+function tick(ts){
+  if(playing&&RUN){const dt=Math.min(.1,(ts-lastTs)/1000);time+=dt*speed/60;if(time>=24){time=24;playing=false;$('play').textContent='Replay'}$('scrub').value=time}
+  lastTs=ts;
+  if(RUN){if(statDirty)drawStatic();drawDynamic();updatePanel();if(playing||chartTick++%6===0)drawChartsLight()}
+  requestAnimationFrame(tick);
+}
+function drawChartsLight(){drawCharts()}
+$('play').onclick=()=>{if(time>=24)time=0;playing=!playing;$('play').textContent=playing?'Pause':'Play'};
+$('speed').onchange=e=>speed=+e.target.value;
+$('scrub').oninput=e=>{time=+e.target.value;drawAll();updatePanel()};
+document.addEventListener('keydown',e=>{if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();$('play').click()}else if(e.code==='ArrowRight'){time=Math.min(24,time+1/6);updatePanel();drawAll()}else if(e.code==='ArrowLeft'){time=Math.max(0,time-1/6);updatePanel();drawAll()}});
+// open on the morning build-up, playing
+time=7.5;playing=true;$('play').textContent='Pause';
+init();
+})();
+</script>
