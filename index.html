@@ -69,6 +69,14 @@ h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em
 .side{display:flex;flex-direction:column;gap:10px;min-width:0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
 .card h3{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.fleetblocks{display:flex;flex-direction:column;gap:12px}
+.fblock{border-top:1px solid var(--line);padding-top:10px}.fblock:first-child{border-top:0;padding-top:0}
+.fblock .fh{display:flex;align-items:center;gap:8px;font-family:var(--f-head);font-weight:600;font-size:16px;line-height:1.2}
+.fblock .fh i{width:11px;height:11px;border-radius:3px;background:var(--ink-2);display:inline-block}
+.fblock .fh i.bike{border-radius:50%}
+.fblock .fs{color:var(--ink-2);font-size:12px;margin:3px 0 0;line-height:1.4}
+.fblock .stats{margin-top:8px}
+.fcost{font-size:12px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:8px}.fcost b{color:var(--ink);font-family:var(--f-num);font-weight:500}
 .fleet{font-family:var(--f-head);font-size:19px;line-height:1.2;font-weight:600}
 .fleet-sub{color:var(--ink-2);font-size:12.5px;margin-top:4px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
@@ -187,9 +195,9 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       </div>
       <div class="card wide">
         <h3>Fleet</h3>
-        <div class="fleet" id="fleetName">…</div>
-        <div class="fleet-sub" id="fleetSub"></div>
-        <div class="stats" id="states"></div>
+        <div class="fleet" id="fleetName" hidden>…</div>
+        <div class="fleet-sub" id="fleetSub" hidden></div>
+        <div id="states" class="fleetblocks"></div>
       </div>
       <div class="card wide">
         <h3>Right now</h3>
@@ -664,7 +672,13 @@ function findRiders(i,seg){const d=RUN;for(let k=0;k<d.pax.length;k++){const p=d
 /* ---------- panel ---------- */
 const fmt=t=>{t=((t%24)+24)%24;const h=Math.floor(t),m=Math.floor((t-h)*60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')};
 function buildStates(){
-  $('states').innerHTML=[['Carrying','--carry','sCarry'],['Driving empty','--empty','sEmpty'],['Idle','--idle','sIdle'],['Charging','--charge','sChg']].map(a=>`<div class="stat"><span><i class="dot" style="background:var(${a[1]})"></i>${a[0]}</span><b id="${a[2]}">0</b></div>`).join('');
+  const d=RUN;const L=[['Carrying','--carry','Carry'],['Empty','--empty','Empty'],['Idle','--idle','Idle'],['Charging','--charge','Chg']];
+  let h=d.fleets.map((f,fi)=>{const shuttle=f.kind==='road';
+    return `<div class="fblock"><div class="fh"><i class="${shuttle?'':'bike'}"></i>${plural(f.n,shuttle?(f.seats+'-seat shuttle'):(f.seats+'-seat e-bike'))}</div>
+    <div class="fs">${f.label} ${f.spec} · ${f.speed} km/h · ${f.cap_kwh} kWh · ${f.pax_per_trip} people per trip</div>
+    <div class="stats">${L.map(a=>`<div class="stat"><span><i class="dot" style="background:var(${a[1]})"></i>${a[0]}</span><b id="s${a[2]}${fi}">0</b></div>`).join('')}</div></div>`}).join('');
+  if(d.caseInfo&&d.caseInfo.mod&&d.caseInfo.mod.cost&&d.caseInfo.custom)h+=`<div class="fcost">Fleet cost <b>$${Math.round(d.caseInfo.mod.cost).toLocaleString('en-US')}</b></div>`;
+  $('states').innerHTML=h;
 }
 function buildCmp(){
   const c=RUN.caseInfo,r=RUN.runInfo;const mod=c.custom?{wait_model:c.mod.avg_wait,worst_model:c.mod.peak_wait,vol_model:c.mod.volume,avail_model:c.mod.avail}:IDX.model.find(m=>m.scenario===sel.scn&&m.arch===NAMES[sel.arch]);
@@ -707,8 +721,8 @@ function updatePanel(force){
   const blk=Math.floor(time/2)*2;const tr=d.traffic&&d.traffic.blocks.includes(blk);
   $('trafficChip').hidden=!(d.traffic&&tr);if(d.traffic&&tr)$('trafficTxt').textContent='Rush-hour traffic: shuttles at '+Math.round(d.traffic.road*100)+'%, bikes at '+Math.round(d.traffic.bike*100)+'% of normal speed';
   const dem=IDX.demand[String(blk)];$('blockTxt').textContent=fmt(blk)+' to '+fmt(blk+2)+', demand '+dem+' people/h';
-  let c=[0,0,0,0],eSum=0;d.veh.forEach(v=>{const s=vstate(v,time);eSum+=Math.max(0,Math.min(1,s.e));const code=s.code;if(code===6)c[2]++;else if(code===3||code===2||code===4)c[0]++;else if(code===1||code===5)c[1]++;else c[3]++});
-  $('sCarry').textContent=c[0];$('sEmpty').textContent=c[1];$('sChg').textContent=c[2];$('sIdle').textContent=c[3];$('lBatt').textContent=Math.round(100*eSum/d.veh.length)+'%';
+  const cf=d.fleets.map(()=>[0,0,0,0]);let eSum=0;d.veh.forEach(v=>{const c=cf[v[0]];const s=vstate(v,time);eSum+=Math.max(0,Math.min(1,s.e));const code=s.code;if(code===6)c[2]++;else if(code===3||code===2||code===4)c[0]++;else if(code===1||code===5)c[1]++;else c[3]++});
+  cf.forEach((c,fi)=>{$('sCarry'+fi).textContent=c[0];$('sEmpty'+fi).textContent=c[1];$('sChg'+fi).textContent=c[2];$('sIdle'+fi).textContent=c[3]});$('lBatt').textContent=Math.round(100*eSum/d.veh.length)+'%';
   let w=0,lw=0;for(let i=0;i<d.pax.length;i++){const p=d.pax[i];if(p[0]>time)break;if(p[4]>time){w++;lw=Math.max(lw,(time-p[0])*60)}}
   $('lWait').textContent=w;$('lLong').textContent=lw.toFixed(1)+' min';
   let lo=0,hi=d.byDrop.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(d.pax[d.byDrop[m]][5]<=time){r=m;lo=m+1}else hi=m-1}
