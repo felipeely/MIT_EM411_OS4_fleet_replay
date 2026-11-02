@@ -444,12 +444,26 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{read
 
 /* ---------- loading ---------- */
 async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+
+/* ---------- remember settings between visits and between pages ---------- */
+const KEEP_IDS=['ns','s_ch','s_ba','s_cg','s_mo','s_au','nb','b_fr','b_ba','b_cg','b_mo','speed'];
+function saveState(){try{const o={sel,time,ids:{}};KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e)o.ids[i]=e.value});localStorage.setItem('fleet-state',JSON.stringify(o))}catch(e){}}
+function loadSaved(){try{return JSON.parse(localStorage.getItem('fleet-state')||'null')}catch(e){return null}}
+function applySavedControls(o){if(!o)return;
+  Object.assign(sel,o.sel||{});
+  const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
+  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);
+  KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e&&o.ids&&o.ids[i]!=null)e.value=o.ids[i]});
+  if($('speed'))speed=+$('speed').value||speed}
+window.addEventListener('pagehide',saveState);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
+document.addEventListener('click',()=>setTimeout(saveState,50));document.addEventListener('change',()=>setTimeout(saveState,50));
+setInterval(saveState,3000);
 async function init(){
   readTokens();
   try{[MAP,IDX]=await Promise.all([getJSON('map.json'),getJSON('index.json')])}catch(e){$('loading').textContent='Could not load the data files ('+e.message+').';return}
   const N=MAP.nodes;
   MAP.edges.forEach(e=>{const a=e[0],b=e[1];let pts=e[3]||[N[a],N[b]];if(e[3]){const L=e[3],h=Math.hypot;if(h(L[0][0]-N[b][0],L[0][1]-N[b][1])+h(L[L.length-1][0]-N[a][0],L[L.length-1][1]-N[a][1])<h(L[0][0]-N[a][0],L[0][1]-N[a][1])+h(L[L.length-1][0]-N[b][0],L[L.length-1][1]-N[b][1])){pts=L.slice().reverse();e[3]=pts}}edgeLine.set(a*4096+b,pts);edgeLine.set(b*4096+a,pts.slice().reverse())});
-  FleetSim.setMap(MAP);buildSeg();buildBuilder();buildLegend();resize();await loadRun();$('loading').hidden=true;
+  FleetSim.setMap(MAP);buildSeg();buildBuilder();const SAVED=loadSaved();applySavedControls(SAVED);buildLegend();resize();await loadRun();if(SAVED&&typeof SAVED.time==='number'){time=SAVED.time;statDirty=true;drawAll();updatePanel(true)}$('loading').hidden=true;
   requestAnimationFrame(tick);
 }
 function buildSeg(){
