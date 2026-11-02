@@ -6,9 +6,9 @@
 <style>
 /* Layout concept: a transit control room. One big street map of the 3.5 km2 service area, a fleet and requirement panel at its side, and two day-long charts below that share the playhead. */
 :root{
-  --bg:#EEF0F2; --panel:#FFFFFF; --panel-2:#F6F7F8; --line:#D5D9DE; --ink:#15191E; --ink-2:#4A535D; --ink-3:#7B8591;
+  --bg:#F6F8FA; --panel:#FFFFFF; --panel-2:#F6F7F8; --line:#DDE1E6; --ink:#15191E; --ink-2:#4A535D; --ink-3:#7B8591;
   --accent:#A31F34; --accent-ink:#FFFFFF;
-  --map-ground:#E9ECEF; --map-bld:#D3D8DE; --map-water:#C5DAEA; --map-street:#FFFFFF; --map-street-edge:#C3C9D0; --map-major:#FFFFFF; --map-label:#56606B; --map-ring:#A31F34;
+  --map-ground:#F4F6F8; --map-bld:#E3E7EC; --map-water:#CFE4F4; --map-street:#FFFFFF; --map-street-edge:#D6DBE1; --map-major:#FFFFFF; --map-label:#5B6672; --map-ring:#A31F34;
   --carry:#2563EB; --empty:#8B5CF6; --idle:#8A94A0; --charge:#16A34A; --wait-ok:#FFFFFF; --wait-mid:#F59E0B; --wait-bad:#DC2626;
   --good:#15803D; --bad:#B91C1C; --warn:#B45309;
   --f-ui:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif; --f-head:'Barlow Semi Condensed','Barlow',system-ui,sans-serif; --f-num:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
@@ -54,6 +54,7 @@ h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em
 .chip i{width:8px;height:8px;border-radius:50%;background:var(--ink-3);display:inline-block}
 .chip.traffic{color:var(--wait-bad);border-color:var(--wait-bad)}
 .chip.traffic i{background:var(--wait-bad)}
+.chip.modelchip{color:var(--accent);border-color:var(--accent);white-space:normal;max-width:420px}.chip.modelchip i{background:var(--accent)}
 .maptools{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
 .btn{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 10px;border-radius:7px;background:var(--panel);border:1px solid var(--line);color:var(--ink);font-size:13px;font-weight:600;box-sizing:border-box}
 .btn:hover{background:var(--panel-2)}
@@ -120,10 +121,10 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <p>One simulated weekday of the autonomous shuttle and e-bike fleet, replayed on the streets of our MIT and Kendall service area. Timing, queues, batteries and waits are the simulation's own.</p>
     </div>
     <div class="ctrls">
-      <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button></div></div>
+      <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
       <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
-      <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button></div></div>
+      <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button><button data-v="model" aria-pressed="false" title="One day the way the model sees it: even arrivals, average trips, no batteries">Model day</button></div></div>
     </div>
   </div>
 
@@ -135,6 +136,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <div class="hud">
         <div class="clock" id="clock">08:00<small id="ampm"></small></div>
         <div class="chip traffic" id="trafficChip" hidden><i></i><span id="trafficTxt"></span></div>
+        <div class="chip modelchip" id="modelChip" hidden><i></i><span>Model day: even arrivals, every ride 1.1 km, only floor(n x availability) vehicles in service (the others sit out), no batteries</span></div>
         <div class="chip" id="blockChip"><i></i><span id="blockTxt"></span></div>
       </div>
       <div class="maptools">
@@ -356,7 +358,51 @@ function runCustom(cfg,reps,onProgress){
  return {avg200:agg,reps:{typical:typ,worst},peaks};
 }
 function modelFor(cfg){const sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null;return modelEval(sv,cfg.ns,bv,cfg.nb,!!cfg.rush)}
-root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,setMap};
+
+/* ---------- the model's own day: even arrivals, average trips, only floor(n x availability) vehicles in service, no batteries ---------- */
+function runModelDay(cfg){
+ const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,gr=rng32(4242);
+ const halves=[[sv,cfg.ns,'road'],[bv,cfg.nb,'bike']].filter(h=>h[0]&&h[1]>0);
+ const R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3,DW=C.DWELL_S/3600;
+ const capOf=(v,n,f)=>capacityPax(v,n,f);
+ const fleets=[],veh=[],allpax=[];let off=0,vehIdx=0;
+ // demand share per block, as in the model
+ const sh=shares(sv,cfg.ns,bv,cfg.nb,rush);
+ halves.forEach(([v,n,kind],ti)=>{
+  const c=Math.max(0,Math.floor(n*v.avail+1e-9)),load=paxPerTrip(v.pax),vsegs=Array.from({length:n},()=>[]),pos=Array.from({length:n},()=>Math.floor(gr()*ADJ.length)),freeAt=new Float64Array(n),pax=[];
+  let k=0,peopleAcc=0;
+  for(const [st,dem] of Object.entries(C.DEMAND)){
+   const inT=rush&&C.TRAFFIC.blocks.includes(+st),f=inT?C.TRAFFIC[kind==='road'?'road':'bike']:1;
+   const share=kind==='road'?sh[st]:1-sh[st],cap=capOf(v,n,f),dh=Math.min(dem*share,cap);
+   if(c<=0||dh<=0)continue;
+   const T=cycleH(v,C.TRIP_KM,f),lam=dh/load,aFull=dem*share/load*T,rho=aFull/c,idle=Math.max(c-Math.min(aFull,c),1);
+   const pickH=C.DETOUR*.5*Math.sqrt(C.AREA/idle)/(v.speed_empty*f),delayH=rho<1?.5*T/c:Math.max(0,C.MAX_WAIT/60-pickH);   // rho >= 1: the model caps the wait at 30 min
+   const nReq=Math.round(lam*C.BLOCK_H);
+   for(let q=0;q<nReq;q++){
+    const t=+st+(q+.5)/lam,people=Math.floor((k+1)*load+1e-9)-Math.floor(k*load+1e-9)||1,empty=(k%2)===1;k++;
+    let i=0,bf=Infinity;for(let j=0;j<c;j++)if(freeAt[j]<bf){bf=freeAt[j];i=j}
+    const start=Math.max(t+delayH,freeAt[i]),d=C.TRIP_KM,pickKm=pickH*v.speed_empty*f;
+    const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,end=start+pickH+2*DW+rideH+retH;
+    const here=pos[i],origin=nodeAt(here,pickKm,gr),dest=nodeAt(origin,d,gr),t1=start+pickH,t2=t1+DW,t3=t2+rideH,t4=t3+DW,t5=t4+retH,sg=vsegs[i];
+    sg.push([R(start),R(t1),1,pathNodes(here,origin),1,1]);sg.push([R(t1),R(t2),2,[origin],1,1]);sg.push([R(t2),R(t3),3,pathNodes(origin,dest),1,1]);sg.push([R(t3),R(t4),4,[dest],1,1]);
+    let last=dest;if(empty){const back=nodeAt(dest,d,gr);sg.push([R(t4),R(t5),5,pathNodes(dest,back),1,1]);last=back}
+    pos[i]=last;freeAt[i]=end-pickH;   // the model does not count the pickup drive as busy time
+    pax.push([R(t),people,origin,dest,R(t1),R(t3),i,Math.round((start-t+pickH)*6000)/100,end<=24?1:0]);
+   }
+  }
+  for(let i=c;i<n;i++)vsegs[i]=[[0,24,6,[pos[i]],1,1]];   // vehicles the model counts as out of service
+  fleets.push({kind,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(load*100)/100,in_service:c});
+  for(let i=0;i<n;i++)veh.push([ti,vsegs[i].length?vsegs[i][0][3][0]:pos[i],vsegs[i]]);
+  pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n;
+ });
+ allpax.sort((a,b)=>a[0]-b[0]);
+ let vol=0,sw=0,sp=0,over=0;const bn=new Array(12).fill(0),bd=new Array(12).fill(0);
+ allpax.forEach(p=>{if(p[8])vol+=p[1];sw+=p[7]*p[1];sp+=p[1];if(p[7]>5)over++;const b=Math.floor(p[0]/2);bn[b]+=p[7]*p[1];bd[b]+=p[1]});
+ let peak=0;for(let b=0;b<12;b++)if(bd[b]>0)peak=Math.max(peak,bn[b]/bd[b]);
+ const mod=modelFor(cfg);
+ return {fleets,veh,pax:allpax,summary:{volume:vol,avg_wait:sp>0?sw/sp:0,peak_wait:peak,over5:allpax.length?over/allpax.length*100:0,avail:mod.avail,requests:allpax.length,people:sp},traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Model day',scenario:rush?'rush':'normal',rep:0},modelDay:true};
+}
+root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,runModelDay,setMap};
 })(typeof window!=='undefined'?window:globalThis);
 
 </script>
@@ -373,8 +419,11 @@ let showB=true,showR=true,tokens={};
 const cvs=$('map'),ctx=cvs.getContext('2d');
 let statLayer=document.createElement('canvas'),statDirty=true;
 const edgeLine=new Map();
+function curTheme(){const t=document.documentElement.getAttribute('data-theme');return t||'light'}
+function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('fleet-theme',t)}catch(e){}const b=document.getElementById('themeBtn');if(b)b.textContent=t==='dark'?'Light':'Dark'}
+(function(){let t='light';try{t=localStorage.getItem('fleet-theme')||'light'}catch(e){}setTheme(t);document.addEventListener('click',e=>{if(e.target&&e.target.id==='themeBtn')setTheme(curTheme()==='dark'?'light':'dark')})})();
 function readTokens(){const cs=getComputedStyle(document.documentElement);['--map-ground','--map-bld','--map-water','--map-street','--map-street-edge','--map-major','--map-label','--map-ring','--carry','--empty','--idle','--charge','--wait-ok','--wait-mid','--wait-bad','--ink','--ink-2','--ink-3','--line','--panel','--bg','--accent','--good','--bad','--warn'].forEach(n=>tokens[n]=cs.getPropertyValue(n).trim());statDirty=true}
-const isDark=()=>{const t=document.documentElement.getAttribute('data-theme');return t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches};
+const isDark=()=>curTheme()==='dark';
 new MutationObserver(()=>{readTokens();drawAll()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{readTokens();drawAll()});
 
@@ -403,6 +452,7 @@ function buildLegend(){
 async function loadRun(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
+  if(sel.run==='model'){return loadModelPreset()}
   const c=IDX.cases.find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
   const r=c.runs.find(r=>r.label===sel.run);
   $('loading').hidden=false;$('loading').textContent='Loading '+SHORT[sel.arch]+'…';
@@ -443,11 +493,23 @@ async function loadCustom(){
   $('loading').hidden=false;$('loading').textContent='Simulating 200 days…';
   await new Promise(r=>setTimeout(r,40));
   const key=JSON.stringify(cfg);let ent=CCACHE[key];if(!ent){ent=FleetSim.runCustom(cfg,200);CCACHE[key]=ent}
-  const rep=ent.reps[sel.run],dk=key+'#'+rep;let d=CACHE[dk];if(!d){d=FleetSim.runDay(cfg,rep,true);prep(d);CACHE[dk]=d}
+  const isModel=sel.run==='model',rep=isModel?0:ent.reps[sel.run],dk=key+'#'+(isModel?'model':rep);let d=CACHE[dk];if(!d){d=isModel?FleetSim.runModelDay(cfg):FleetSim.runDay(cfg,rep,true);prep(d);CACHE[dk]=d}
   d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
   RUN=d;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+', your fleet';
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+', your fleet';
+  buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
+}
+
+async function loadModelPreset(){
+  const a=IDX.archs[sel.arch],cfg={shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush'};
+  playing=false;$('play').textContent='Play';$('loading').hidden=false;$('loading').textContent='Building the model day…';
+  await new Promise(r=>setTimeout(r,30));
+  const key='P'+JSON.stringify(cfg);let d=CACHE[key];if(!d){d=FleetSim.runModelDay(cfg);prep(d);CACHE[key]=d}
+  const c=IDX.cases.find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  d.caseInfo={custom:true,avg200:c.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep:0,summary:d.summary};
+  RUN=d;$('loading').hidden=true;$('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+'the model day (even arrivals, average trips, no batteries)';
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
@@ -529,7 +591,7 @@ function drawStatic(){
   g.fillStyle=tokens['--map-water'];MAP.water.forEach(p=>{path(p,true);g.fill()});
   if(showB){g.fillStyle=tokens['--map-bld'];MAP.buildings.forEach(p=>{path(p,true);g.fill()})}
   // service area: outside the circle fades
-  g.save();g.beginPath();g.rect(0,0,W,H);g.arc(sx(0),sy(0),MAP.radius*view.k,0,Math.PI*2,true);g.fillStyle=isDark()?'rgba(6,9,12,.55)':'rgba(238,240,242,.62)';g.fill('evenodd');g.restore();
+  g.save();g.beginPath();g.rect(0,0,W,H);g.arc(sx(0),sy(0),MAP.radius*view.k,0,Math.PI*2,true);g.fillStyle=isDark()?'rgba(6,9,12,.55)':'rgba(246,248,250,.7)';g.fill('evenodd');g.restore();
   const N=MAP.nodes;
   const drawE=(w,col,maj)=>{g.lineCap='round';g.lineJoin='round';g.strokeStyle=col;MAP.edges.forEach(e=>{if(maj!==undefined&&((e[4]>0)!==maj))return;path(e[3]||[N[e[0]],N[e[1]]],false);g.lineWidth=w(e);g.stroke()})};
   const wk=e=>Math.max(1.6,(e[4]>0?11:7.5)*view.k);
@@ -614,7 +676,7 @@ function buildCmp(){
   $('cmp').innerHTML=h;
   const worstSim=r.summary.peak_wait,mm=mod.worst_model;
   let msg;
-  if(worstSim<=lim)msg=`<span><b>Meets the 5 min wait.</b> The busiest 2 h block averages ${worstSim.toFixed(1)} min in this run. The model says ${mm.toFixed(1)} min.</span>`;
+  if(RUN.modelDay){msg=`<span><b>Model day.</b> Nobody is random here: requests arrive evenly and every ride is the same, so the wait is the model's formula (peak ${worstSim.toFixed(1)} min). Switch to Typical day to see what randomness and real batteries do to the same fleet.</span>`}else if(worstSim<=lim)msg=`<span><b>Meets the 5 min wait.</b> The busiest 2 h block averages ${worstSim.toFixed(1)} min in this run. The model says ${mm.toFixed(1)} min.</span>`;
   else msg=`<span><b>Misses the 5 min wait in the simulation</b> (${worstSim.toFixed(1)} min in the busiest block) while the model says ${mm.toFixed(1)} min. Watch the queue of passengers build when most vehicles are busy or charging.</span>`;
   if(c.custom){const M=c.mod,ok=(b,t)=>`<br>${b?'Meets':'Misses'} ${t}`;msg+='<span style="display:block;margin-top:6px">'+
     '<b>200-day check</b>'+ok(c.avg200.peak_wait<=lim,'the 5 min wait (average peak wait '+c.avg200.peak_wait.toFixed(1)+' min)')+ok(M.ride_min<=IDX.requirement.ride_min,'the 7 min ride (longest ride '+M.ride_min.toFixed(1)+' min)')+ok(c.avg200.volume>=IDX.requirement.volume,'1,500 people per day ('+Math.round(c.avg200.volume)+')')+ok(M.peak_pax_h>=150&&M.capacity>=150,'the 150 people per hour peak (model '+Math.round(M.peak_pax_h)+')')+'</span>'}
@@ -635,7 +697,7 @@ function updateTicker(){
   function render(){ul.innerHTML=shown.slice().reverse().map(k=>{const t=evText(d.events[k]);return `<li class="${t[2]}"><time>${fmt(t[0])}</time><span>${t[1]}</span></li>`}).join('')}
 }
 function updatePanel(force){
-  if(!RUN)return;const d=RUN;
+  if(!RUN)return;const d=RUN;$('modelChip').hidden=!d.modelDay;
   $('clock').firstChild.nodeValue=fmt(time);$('timeval').textContent=fmt(time);$('scrub').value=time;
   const blk=Math.floor(time/2)*2;const tr=d.traffic&&d.traffic.blocks.includes(blk);
   $('trafficChip').hidden=!(d.traffic&&tr);if(d.traffic&&tr)$('trafficTxt').textContent='Rush-hour traffic: shuttles at '+Math.round(d.traffic.road*100)+'%, bikes at '+Math.round(d.traffic.bike*100)+'% of normal speed';

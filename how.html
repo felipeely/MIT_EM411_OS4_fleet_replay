@@ -28,7 +28,7 @@ td{border-top:1px solid var(--line);padding:6px 10px 6px 0;color:var(--ink-2);ve
 </style></head><body><div class="wrap">
 <a class="back" href="index.html">&larr; Back to the replay</a>
 <h1>How the numbers are calculated</h1>
-<p>Two programs share the same vehicle data. <b>model.py</b> is the fast model that scores millions of fleets with simple formulas. <b>sim_day.py</b> plays one day request by request, 200 times, to check the model. The replay page shows the simulation. Every formula below is taken from the code.</p>
+<p>Two programs share the same vehicle data. On the replay page, <b>Model day</b> shows the model's own view of one day: requests arrive evenly, every ride is the average 1.1 km, only the vehicles the availability rounds down to are in service and batteries are not tracked.</p><p> <b>model.py</b> is the fast model that scores millions of fleets with simple formulas. <b>sim_day.py</b> plays one day request by request, 200 times, to check the model. The replay page shows the simulation. Every formula below is taken from the code.</p>
 
 <h2>1. One vehicle</h2>
 <div class="card">
@@ -111,4 +111,4 @@ charge when energy &lt; max( 4 km x power / 1000 , 0.2 x battery )</pre>
 <p>The model sees a smooth, even flow of requests. The simulation has random bunching, so a queue forms whenever several parties arrive within a short time, especially when utilisation is close to 1. For the reference fleet the model gives a peak wait of 2.6 min, the simulation 9.5 min. That is why the reference fails the 5 minute requirement in the simulation. The model is still used to search the design space because it is millions of times faster, and the simulation is used to confirm the short list.</p>
 </div>
 <a class="back" href="index.html">&larr; Back to the replay</a>
-</div></body></html>
+</div><script>(function(){var t='light';try{t=localStorage.getItem('fleet-theme')||'light'}catch(e){}document.documentElement.setAttribute('data-theme',t)})()</script></body></html>
