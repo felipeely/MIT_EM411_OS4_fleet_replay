@@ -111,6 +111,9 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
 .chartcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px 6px;min-width:0}
 .chartcard h3{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;justify-content:space-between}
 .chartcard h3 span{font-family:var(--f-ui);letter-spacing:0;text-transform:none;font-weight:400;font-size:12px;color:var(--ink-3)}
+.clegend{display:flex;flex-wrap:wrap;gap:3px 16px;font-size:12px;color:var(--ink-2);margin:0 0 4px}
+.clegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.clegend svg{flex:none}
 .chartcard canvas{width:100%;display:block;cursor:pointer}
 .note{font-size:12px;color:var(--ink-3);max-width:110ch;margin:2px 0 0}
 .note b{color:var(--ink-2);font-weight:600}
@@ -170,8 +173,8 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
    </div>
 
   <div class="charts">
-    <div class="chartcard"><h3>Wait of every passenger <span id="c1sub"></span></h3><canvas id="c1" height="230"></canvas></div>
-    <div class="chartcard"><h3>What the fleet is doing <span>vehicles by state, whole day</span></h3><canvas id="c2" height="170"></canvas></div>
+    <div class="chartcard"><h3>Wait of every passenger <span id="c1sub"></span></h3><div class="clegend"><span><svg width="10" height="10"><circle cx="5" cy="5" r="4.5" fill="var(--carry)"/></svg>Waited 5 min or less</span><span><svg width="10" height="10"><circle cx="5" cy="5" r="4.5" fill="var(--wait-bad)"/></svg>Waited more than 5 min</span><span><svg width="20" height="10"><line x1="1" y1="5" x2="19" y2="5" stroke="var(--ink)" stroke-width="2" /></svg>Average wait in each 2 h block</span><span><svg width="20" height="10"><line x1="1" y1="5" x2="19" y2="5" stroke="var(--wait-bad)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>5 min requirement</span><span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--ink-3)" opacity=".3"/></svg>Demand per hour (relative)</span><span><svg width="20" height="10"><line x1="1" y1="5" x2="19" y2="5" stroke="var(--accent)" stroke-width="2" /></svg>Now (click or drag to jump)</span><span id="lgTraffic" hidden><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--wait-bad)" opacity=".25"/></svg>Rush-hour traffic blocks</span><span>Faded dots have not happened yet. Vertical axis is square-root scaled</span></div><canvas id="c1" height="230"></canvas></div>
+    <div class="chartcard"><h3>What the fleet is doing <span>vehicles by state, whole day</span></h3><div class="clegend"><span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--carry)" opacity="1"/></svg>Carrying</span><span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--empty)" opacity="1"/></svg>Driving empty</span><span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--charge)" opacity="1"/></svg>Charging</span><span><svg width="12" height="10"><rect width="12" height="10" rx="2" fill="var(--idle)" opacity=".45"/></svg>Idle (rest of the fleet)</span></div><canvas id="c2" height="170"></canvas></div>
   </div>
    </div>
 
@@ -743,6 +746,7 @@ function drawCharts(){
   const x=t=>M.l+(w-M.l-M.r)*t/24;
   const ymaxv=Math.max(10,Math.ceil(d.maxWait/5)*5);const yMax=yS(Math.min(ymaxv,160));const y=m=>h-M.b-(h-M.t-M.b)*yS(m)/yMax;
   const font=getComputedStyle(document.body).getPropertyValue('--f-num');g.font='11px '+font;
+  $('lgTraffic').hidden=!d.traffic;
   // traffic hours
   if(d.traffic){g.fillStyle=tokens['--wait-bad'];g.globalAlpha=.09;d.traffic.blocks.forEach(b=>{g.fillRect(x(b),M.t,x(b+2)-x(b),h-M.t-M.b)});g.globalAlpha=1}
   // demand bars (hourly passengers per hour, scaled to 40% of height)
