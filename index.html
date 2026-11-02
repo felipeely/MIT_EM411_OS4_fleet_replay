@@ -44,7 +44,7 @@ h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em
 .seg button:hover:not([aria-pressed="true"]){background:var(--panel-2)}
 .main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:12px;align-items:stretch}
 .leftcol{display:flex;flex-direction:column;gap:8px;min-width:0}
-.mapbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--map-ground);min-height:460px;height:clamp(520px,78vh,860px);touch-action:none}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--map-ground);min-height:460px;height:clamp(440px,66vh,740px);touch-action:none}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
 #map.drag{cursor:grabbing}
 .hud{position:absolute;left:12px;top:10px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
@@ -88,6 +88,9 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
 .verdict{display:flex;flex-direction:column;gap:6px;align-items:stretch;margin-top:10px;padding:8px 10px;border-radius:8px;font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2)}
 .verdict b{color:var(--ink)}
 .ticker{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12.5px;min-height:150px}
+.logcard{flex:1;min-height:200px;position:relative}
+.logcard .ticker{position:absolute;left:14px;right:14px;top:36px;bottom:10px;overflow:auto;min-height:0}
+@media (max-width:1060px){.logcard .ticker{position:static;max-height:260px}}
 .ticker li{display:flex;gap:8px;color:var(--ink-2);animation:in .25s ease-out}
 .ticker time{font-family:var(--f-num);color:var(--ink-3);flex:none}
 .ticker li.bad{color:var(--bad)} .ticker li.chg{color:var(--charge)}
@@ -157,6 +160,11 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
      <input type="range" id="scrub" min="0" max="24" step="0.0027" value="8" aria-label="Time of day">
      <div class="timeval" id="timeval">08:00</div>
    </div>
+
+  <div class="charts">
+    <div class="chartcard"><h3>Wait of every passenger <span id="c1sub"></span></h3><canvas id="c1" height="230"></canvas></div>
+    <div class="chartcard"><h3>What the fleet is doing <span>vehicles by state, whole day</span></h3><canvas id="c2" height="170"></canvas></div>
+  </div>
    </div>
 
     <div class="side">
@@ -199,7 +207,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
         <table class="cmp" id="cmp"></table>
         <div class="verdict" id="verdict"></div>
       </div>
-      <div class="card wide">
+      <div class="card wide logcard">
         <h3>Event log</h3>
         <ul class="ticker" id="ticker"></ul>
       </div>
@@ -207,10 +215,6 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
   </div>
 
 
-  <div class="charts">
-    <div class="chartcard"><h3>Wait of every passenger <span id="c1sub"></span></h3><canvas id="c1" height="230"></canvas></div>
-    <div class="chartcard"><h3>What the fleet is doing <span>vehicles by state, whole day</span></h3><canvas id="c2" height="170"></canvas></div>
-  </div>
   <p class="note"><b>How to read it.</b> Each dot in the first chart is one request, placed where it arrived and as high as its wait. The dashed line is the 5 minute requirement. Shaded columns show hourly demand. In the rush-hour day, tinted hours are the traffic hours, when shuttles run at 58% and bikes at 85% of normal speed. The simulation has no street map: it draws random trip lengths and random positions. For this picture each pickup, ride and empty return is placed on real streets with the same length and the same timing, so queues, battery stops and waits match the numbers in the model validation exactly. Streets, buildings and river are open data from the City of Cambridge GIS, and landmark positions are approximate.</p>
 </div>
 
@@ -721,7 +725,7 @@ const M={l:44,r:12,t:10,b:24};
 const yS=m=>Math.sqrt(Math.min(m,160)); // wait axis is square-root scaled so 5 min stays readable beside 150 min
 function drawCharts(){
   if(!RUN)return;const d=RUN;
-  let [w,h]=setupChart(c1,230);let g=c1.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
+  let [w,h]=setupChart(c1,200);let g=c1.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
   const x=t=>M.l+(w-M.l-M.r)*t/24;
   const ymaxv=Math.max(10,Math.ceil(d.maxWait/5)*5);const yMax=yS(Math.min(ymaxv,160));const y=m=>h-M.b-(h-M.t-M.b)*yS(m)/yMax;
   const font=getComputedStyle(document.body).getPropertyValue('--f-num');g.font='11px '+font;
@@ -748,7 +752,7 @@ function drawCharts(){
   g.strokeStyle=tokens['--accent'];g.lineWidth=2;g.beginPath();g.moveTo(x(time),M.t);g.lineTo(x(time),h-M.b);g.stroke();
   c1._geom={x0:M.l,x1:w-M.r,w};
   // chart 2: stacked area
-  [w,h]=setupChart(c2,170);g=c2.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
+  [w,h]=setupChart(c2,130);g=c2.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,w,h);
   const total=d.veh.length,xx=t=>M.l+(w-M.l-M.r)*t/24,yy=v=>h-M.b-(h-M.t-M.b)*v/total;
   if(d.traffic){g.fillStyle=tokens['--wait-bad'];g.globalAlpha=.09;d.traffic.blocks.forEach(b=>{g.fillRect(xx(b),M.t,xx(b+2)-xx(b),h-M.t-M.b)});g.globalAlpha=1}
   const cols=[tokens['--carry'],tokens['--empty'],tokens['--charge'],tokens['--idle']],order=[0,1,2,3];
