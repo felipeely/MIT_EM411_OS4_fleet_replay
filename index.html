@@ -571,7 +571,8 @@ function zoomAt(f,px,py){const wx=(px-W/2)/view.k+view.cx,wy=-(py-H/2)/view.k+vi
 $('zin').onclick=()=>zoomAt(1.5,W/2,H/2);$('zout').onclick=()=>zoomAt(1/1.5,W/2,H/2);$('zfit').onclick=()=>{view.k=view.fit;view.cx=view.hx;view.cy=view.hy;statDirty=true;drawAll()};
 $('tbld').onclick=e=>{showB=!showB;e.currentTarget.setAttribute('aria-pressed',showB);statDirty=true;drawAll()};
 $('troute').onclick=e=>{showR=!showR;e.currentTarget.setAttribute('aria-pressed',showR);drawAll()};
-cvs.addEventListener('wheel',e=>{e.preventDefault();const r=cvs.getBoundingClientRect();zoomAt(e.deltaY<0?1.2:1/1.2,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+let _hz=null;function hintZoom(){let h=document.getElementById('zoomHint');if(!h){h=document.createElement('div');h.id='zoomHint';h.textContent='Hold Ctrl (or ⌘) and scroll to zoom the map';h.style.cssText='position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(30,40,50,.85);color:#fff;padding:6px 12px;border-radius:8px;font-size:13px;pointer-events:none;transition:opacity .25s;z-index:5';cvs.parentElement.style.position=cvs.parentElement.style.position||'relative';cvs.parentElement.appendChild(h)}h.style.opacity=1;clearTimeout(_hz);_hz=setTimeout(()=>h.style.opacity=0,1200)}
+cvs.addEventListener('wheel',e=>{if(!e.ctrlKey&&!e.metaKey){hintZoom();return}e.preventDefault();const r=cvs.getBoundingClientRect();zoomAt(e.deltaY<0?1.2:1/1.2,e.clientX-r.left,e.clientY-r.top)},{passive:false});
 let drag=null;const pts=new Map();let pinch=0;
 cvs.addEventListener('pointerdown',e=>{cvs.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy};cvs.classList.add('drag');if(pts.size===2){const a=[...pts.values()];pinch=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])}});
 cvs.addEventListener('pointermove',e=>{
