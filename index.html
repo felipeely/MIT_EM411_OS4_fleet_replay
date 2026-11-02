@@ -50,6 +50,16 @@ h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em
 .hud{position:absolute;left:12px;top:10px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .clock{font-family:var(--f-num);font-weight:500;font-size:46px;line-height:1;letter-spacing:-.02em;color:var(--ink);text-shadow:0 0 12px var(--map-ground),0 0 3px var(--map-ground)}
 .clock small{font-size:14px;color:var(--ink-2);margin-left:6px;letter-spacing:0}
+.demand{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px 9px;width:max-content;max-width:100%;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+.demand .dl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:flex;gap:8px;align-items:baseline}
+.demand .dl span{letter-spacing:0;text-transform:none;font-weight:500;font-family:var(--f-num)}
+.demand .dn{display:flex;align-items:baseline;gap:7px;margin-top:2px}
+.demand .dn b{font-family:var(--f-num);font-weight:600;font-size:30px;line-height:1;color:var(--ink)}
+.demand .dn span{font-size:13px;color:var(--ink-2)}
+.demand .dn em{font-style:normal;font-weight:700;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--dc,var(--idle));color:#fff;margin-left:4px}
+.demand .dm{display:flex;gap:3px;margin-top:6px}
+.demand .dm i{flex:1;height:6px;border-radius:3px;background:var(--line)}
+.demand .dm i.on{background:var(--dc,var(--idle))}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--ink-2);width:max-content;max-width:100%}
 .chip i{width:8px;height:8px;border-radius:50%;background:var(--ink-3);display:inline-block}
 .chip.traffic{color:var(--wait-bad);border-color:var(--wait-bad)}
@@ -151,7 +161,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
         <div class="clock" id="clock">08:00<small id="ampm"></small></div>
         <div class="chip traffic" id="trafficChip" hidden><i></i><span id="trafficTxt"></span></div>
         <div class="chip modelchip" id="modelChip" hidden><i></i><span>Model day: even arrivals, every ride 1.1 km, only floor(n x availability) vehicles in service (the others sit out), no batteries</span></div>
-        <div class="chip" id="blockChip"><i></i><span id="blockTxt"></span></div>
+        <div class="demand" id="blockChip"><div class="dl">Demand <span id="dWin"></span></div><div class="dn"><b id="dNum">50</b><span>people per hour</span><em id="dLvl">Low</em></div><div class="dm" id="dMeter"><i></i><i></i><i></i><i></i><i></i></div></div>
       </div>
       <div class="maptools">
         <button class="btn" id="zin" aria-label="Zoom in">+</button>
@@ -740,7 +750,9 @@ function updatePanel(force){
   $('clock').firstChild.nodeValue=fmt(time);$('timeval').textContent=fmt(time);$('scrub').value=time;
   const blk=Math.floor(time/2)*2;const tr=d.traffic&&d.traffic.blocks.includes(blk);
   $('trafficChip').hidden=!(d.traffic&&tr);if(d.traffic&&tr)$('trafficTxt').textContent='Rush-hour traffic: shuttles at '+Math.round(d.traffic.road*100)+'%, bikes at '+Math.round(d.traffic.bike*100)+'% of normal speed';
-  const dem=IDX.demand[String(blk)];$('blockTxt').textContent=fmt(blk)+' to '+fmt(blk+2)+', demand '+dem+' people/h';
+  const dem=IDX.demand[String(blk)];$('dWin').textContent=fmt(blk)+' to '+fmt(blk+2);$('dNum').textContent=dem;
+  {const mx=Math.max(...Object.values(IDX.demand));const lv=dem>=mx*.9?['Peak','--wait-bad',5]:dem>=mx*.6?['High','--wait-mid',4]:dem>=mx*.3?['Medium','--carry',3]:dem>=mx*.1?['Low','--idle',2]:['Very low','--idle',1];
+   const bx=$('blockChip');bx.style.setProperty('--dc','var('+lv[1]+')');$('dLvl').textContent=lv[0];[...$('dMeter').children].forEach((e,i)=>e.classList.toggle('on',i<lv[2]))}
   const cf=d.fleets.map(()=>[0,0,0,0]);let eSum=0;d.veh.forEach(v=>{const c=cf[v[0]];const s=vstate(v,time);eSum+=Math.max(0,Math.min(1,s.e));const code=s.code;if(code===6)c[2]++;else if(code===3||code===2||code===4)c[0]++;else if(code===1||code===5)c[1]++;else c[3]++});
   cf.forEach((c,fi)=>{$('sCarry'+fi).textContent=c[0];$('sEmpty'+fi).textContent=c[1];$('sChg'+fi).textContent=c[2];$('sIdle'+fi).textContent=c[3]});$('lBatt').textContent=Math.round(100*eSum/d.veh.length)+'%';
   let w=0,lw=0;for(let i=0;i<d.pax.length;i++){const p=d.pax[i];if(p[0]>time)break;if(p[4]>time){w++;lw=Math.max(lw,(time-p[0])*60)}}
