@@ -148,6 +148,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
       <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
+      <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
       <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button><button data-v="model" aria-pressed="false" title="One day the way the model sees it: even arrivals, average trips, no batteries">Model day</button></div></div>
     </div>
   </div>
@@ -236,6 +237,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
   </div>
 
 
+  <p class="note"><b>Dispatch.</b> Standard is the original rule: a vehicle driving back empty after a drop-off cannot be reassigned until it arrives. Smart sends that vehicle straight to a waiting passenger (it keeps the distance already driven and skips the rest of the return). Everything else is the same: same demand, same random numbers, same batteries and charging.</p>
   <p class="note"><b>How to read it.</b> Each dot in the first chart is one request, placed where it arrived and as high as its wait. The dashed line is the 5 minute requirement. Shaded columns show hourly demand. In the rush-hour day, tinted hours are the traffic hours, when shuttles run at 58% and bikes at 85% of normal speed. The simulation has no street map: it draws random trip lengths and random positions. For this picture each pickup, ride and empty return is placed on real streets with the same length and the same timing, so queues, battery stops and waits match the numbers in the model validation exactly. Streets, buildings and river are open data from the City of Cambridge GIS, and landmark positions are approximate.</p>
 </div>
 
@@ -321,20 +323,24 @@ function nodeAt(src,km,gr){const {dist}=spFrom(src),target=km*1000,tol=Math.max(
  return ok.length?ok[Math.floor(gr()*ok.length)]:best}
 
 /* ---------- the day simulation for one vehicle type (sim_day.simulate_type), optionally with the display log ---------- */
-function simType(v,n,share,rnd,kind,rush,disp){
+function simType(v,n,share,rnd,kind,rush,disp,smart){
  const parties=[];
  for(const [st,dem] of Object.entries(C.DEMAND)){const sh=share[st],rate=dem*sh/PAXMEAN,k=rate>0?poisson(rate*C.BLOCK_H,rnd):0;
   for(let q=0;q<k;q++){const t=+st+C.BLOCK_H*rnd(),u=rnd();let acc=0,size=6;for(const [s,p] of C.PARTY){acc+=p;if(u<acc){size=s;break}}parties.push([t,size])}}
  parties.sort((a,b)=>a[0]-b[0]);
  const reqs=[];parties.forEach(([t,P])=>{const K=Math.ceil(P/v.pax);for(let g=0;g<K;g++)reqs.push([t,P/K,Math.floor(P/K)+(g<P%K?1:0)])});
  const freeAt=new Float64Array(n),energy=new Float64Array(n).fill(v.cap_kwh),emax=2*C.RIDE[1]*v.power_wh_km/1000;
+ const dropEnd=new Float64Array(n),retEnd=new Float64Array(n),retE=new Float64Array(n),canRe=new Uint8Array(n);
  const m=reqs.length,waits=new Float64Array(m),done=new Float64Array(m),arr=new Float64Array(m),pr=new Float64Array(m);let chg=0;
  const DW=C.DWELL_S/3600,vsegs=disp?Array.from({length:n},()=>[]):null,pax=disp?[]:null,pos=disp?Array.from({length:n},()=>Math.floor(disp.gr()*ADJ.length)):null;
  const R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3;
  for(let r=0;r<m;r++){
   const t=reqs[r][0];let idleN=0,i=-1,bestE=Infinity;
-  for(let j=0;j<n;j++)if(freeAt[j]<=t){idleN++;if(energy[j]<bestE){bestE=energy[j];i=j}}
+  for(let j=0;j<n;j++)if(freeAt[j]<=t||(smart&&canRe[j]&&dropEnd[j]<=t&&t<retEnd[j])){idleN++;if(energy[j]<bestE){bestE=energy[j];i=j}}
   if(i<0){let bf=Infinity;for(let j=0;j<n;j++)if(freeAt[j]<bf){bf=freeAt[j];i=j}}
+  if(smart&&freeAt[i]>t&&canRe[i]&&dropEnd[i]<=t&&t<retEnd[i]){/* smart dispatch: the vehicle was driving back empty, it keeps the distance driven and skips the rest */
+   const frac=(t-dropEnd[i])/(retEnd[i]-dropEnd[i]);energy[i]+=retE[i]*(1-frac);freeAt[i]=t;
+   if(disp){const sg=vsegs[i],last=sg[sg.length-1];if(last&&last[2]===5){const pth=last[3];let k=Math.round(frac*(pth.length-1));k=Math.max(0,Math.min(pth.length-1,k));last[5]=R3(last[4]+(last[5]-last[4])*frac);last[3]=pth.slice(0,k+1);last[1]=R(t);pos[i]=pth[k]}}}
   const start=Math.max(t,freeAt[i]),pickKm=C.DETOUR*.5*Math.sqrt(C.AREA/Math.max(idleN,1)),f=trafficF(rush,kind,start),pickH=pickKm/(v.speed_empty*f);
   const d=C.RIDE[0]+(C.RIDE[1]-C.RIDE[0])*rnd(),empty=rnd()<C.EMPTY_SHARE;
   const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,dur=rideH+2*DW+retH+pickH;
@@ -352,6 +358,7 @@ function simType(v,n,share,rnd,kind,rush,disp){
    pos[i]=last;pax.push([R(t),reqs[r][2],origin,dest,R(t1),R(t3),i,Math.round(waits[r]*6000)/100,done[r]<=24?1:0]);
   }
   if(ch>0)energy[i]=v.cap_kwh;freeAt[i]=end;
+  if(smart){dropEnd[i]=start+dur-retH;retEnd[i]=start+dur;retE[i]=empty?v.power_wh_km*d/1000:0;canRe[i]=(empty&&ch===0)?1:0}
  }
  return {arr,waits,pr,done,chg,vsegs,pax};
 }
@@ -365,14 +372,14 @@ function dayStats(parts,vehH){
 function runDay(cfg,rep,disp){
  const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,sh=shares(sv,cfg.ns,bv,cfg.nb,rush),shB={};for(const k in sh)shB[k]=1-sh[k];
  const rnd=rng32(1000+rep),gr=disp?rng32(777+rep):null,parts=[],types=[];let vehH=0;
- [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null));types.push([v,n,k]);vehH+=n*24});
+ [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart));types.push([v,n,k]);vehH+=n*24});
  const stats=dayStats(parts,vehH);
  if(!disp)return stats;
  const fleets=[],veh=[],allpax=[];let off=0;
  parts.forEach((p,ti)=>{const [v,n,k]=types[ti];fleets.push({kind:k,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(paxPerTrip(v.pax)*100)/100});
   for(let i=0;i<n;i++)veh.push([ti,p.vsegs[i].length?p.vsegs[i][0][3][0]:0,p.vsegs[i]]);p.pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n});
  allpax.sort((a,b)=>a[0]-b[0]);
- return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep}};
+ return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard'}};
 }
 /* 200 days (no display), then the typical and worst days with the display log */
 function runCustom(cfg,reps,onProgress){
@@ -429,7 +436,6 @@ function runModelDay(cfg){
 }
 root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,runModelDay,setMap};
 })(typeof window!=='undefined'?window:globalThis);
-
 </script>
 <script>
 (function(){
@@ -439,7 +445,7 @@ const NAMES=['1 Reference mixed','2 Small shuttles only','3 Two-seat shuttles on
 const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet'];
 const ST_NAMES=['Idle','Driving to passenger','Boarding','Carrying passengers','Dropping off','Driving empty','Charging'];
 let MAP,IDX,RUN=null,CACHE={},view={cx:0,cy:0,k:1,fit:1},W=0,H=0,DPR=1,time=8,playing=false,lastTs=0,speed=6;
-const sel={arch:0,scn:'normal',run:'typical'};
+const sel={arch:0,scn:'normal',run:'typical',disp:'std'};
 let showB=true,showR=true,tokens={};
 const cvs=$('map'),ctx=cvs.getContext('2d');
 let statLayer=document.createElement('canvas'),statDirty=true;
@@ -465,7 +471,7 @@ function loadSaved(){try{return JSON.parse(localStorage.getItem('fleet-state')||
 function applySavedControls(o){if(!o)return;
   Object.assign(sel,o.sel||{});
   const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
-  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);
+  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');
   KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e&&o.ids&&o.ids[i]!=null)e.value=o.ids[i]});
   if($('speed'))speed=+$('speed').value||speed}
 window.addEventListener('pagehide',saveState);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
@@ -484,6 +490,7 @@ function buildSeg(){
   SHORT.forEach((n,i)=>{const b=document.createElement('button');b.textContent=SHORT[i];b.dataset.v=i;b.setAttribute('aria-pressed',i===0);box.appendChild(b)});
   box.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);loadRun()});
   $('segScn').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.scn=b.dataset.v;pressed($('segScn'),b);loadRun()});
+  $('segDisp').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.disp=b.dataset.v;pressed($('segDisp'),b);loadRun()});
   $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
 }
 function pressed(box,btn){[...box.children].forEach(c=>c.setAttribute('aria-pressed',c===btn))}
@@ -495,13 +502,13 @@ async function loadRun(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
   if(sel.run==='model'){return loadModelPreset()}
-  const c=IDX.cases.find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  const c=(sel.disp==='smart'?IDX.cases_smart:IDX.cases).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
   const r=c.runs.find(r=>r.label===sel.run);
   $('loading').hidden=false;$('loading').textContent='Loading '+SHORT[sel.arch]+'…';
   let d=CACHE[r.file];if(!d){try{d=await getJSON(r.file)}catch(e){$('loading').textContent='Could not load '+r.file;return}CACHE[r.file]=d;prep(d)}
   RUN=d;RUN.caseInfo=c;RUN.runInfo=r;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
-  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')');
+  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')')+(sel.disp==='smart'?', smart dispatch':'');
   buildStates();buildCmp();buildEvents();
   statDirty=true;drawAll();updatePanel(true);
 }
@@ -520,7 +527,7 @@ function buildBuilder(){
 function setBuilder(sh,ns,bk,nb){['s_ch','s_ba','s_cg','s_mo','s_au'].forEach((id,i)=>$(id).value=sh[i]);['b_fr','b_ba','b_cg','b_mo'].forEach((id,i)=>$(id).value=bk[i]);$('ns').value=ns;$('nb').value=nb;sumBuilder()}
 function readCfg(){
   const ns=Math.max(0,Math.min(80,Math.floor(+$('ns').value||0))),nb=Math.max(0,Math.min(150,Math.floor(+$('nb').value||0)));
-  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush'};
+  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart'};
 }
 function sumBuilder(){
   const c=readCfg(),F=FleetSim,parts=[];let cost=0;
@@ -539,7 +546,7 @@ async function loadCustom(){
   d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
   RUN=d;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+', your fleet';
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+', your fleet';
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 
@@ -548,7 +555,7 @@ async function loadModelPreset(){
   playing=false;$('play').textContent='Play';$('loading').hidden=false;$('loading').textContent='Building the model day…';
   await new Promise(r=>setTimeout(r,30));
   const key='P'+JSON.stringify(cfg);let d=CACHE[key];if(!d){d=FleetSim.runModelDay(cfg);prep(d);CACHE[key]=d}
-  const c=IDX.cases.find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  const c=(sel.disp==='smart'?IDX.cases_smart:IDX.cases).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
   d.caseInfo={custom:true,avg200:c.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep:0,summary:d.summary};
   RUN=d;$('loading').hidden=true;$('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
   $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+'the model day (even arrivals, average trips, no batteries)';
