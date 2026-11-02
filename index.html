@@ -443,7 +443,10 @@ new MutationObserver(()=>{readTokens();drawAll()}).observe(document.documentElem
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{readTokens();drawAll()});
 
 /* ---------- loading ---------- */
-async function getJSON(u){const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+function loadScriptData(u){return new Promise((res,rej)=>{window.__J=window.__J||{};if(window.__J[u])return res(window.__J[u]);const sc=document.createElement('script');sc.src=u.replace(/\.json$/,'.js');sc.onload=()=>window.__J[u]?res(window.__J[u]):rej(new Error(u+' empty'));sc.onerror=()=>rej(new Error(u+' not found'));document.head.appendChild(sc)})}
+async function getJSON(u){
+  if(location.protocol==='file:')return loadScriptData(u);
+  try{const r=await fetch(u);if(!r.ok)throw new Error(u+' '+r.status);return await r.json()}catch(e){return loadScriptData(u)}}
 
 /* ---------- remember settings between visits and between pages ---------- */
 const KEEP_IDS=['ns','s_ch','s_ba','s_cg','s_mo','s_au','nb','b_fr','b_ba','b_cg','b_mo','speed'];
