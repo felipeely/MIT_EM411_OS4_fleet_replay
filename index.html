@@ -124,6 +124,29 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
 .clegend{display:flex;flex-wrap:wrap;gap:3px 16px;font-size:12px;color:var(--ink-2);margin:0 0 4px}
 .clegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .clegend svg{flex:none}
+
+.utility{margin:18px 0 6px}
+.utility h2{font-size:15px;margin-bottom:2px}
+.utility .usub{font-size:12.5px;color:var(--ink-3);margin-bottom:10px;max-width:90ch}
+.ugrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.ugrid .chartcard canvas{cursor:default;height:150px}
+.uvals{font-size:11.5px;color:var(--ink-2);line-height:1.5;padding:2px 0 6px}
+.uvals b{color:var(--ink);font-weight:600}
+.mau{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px;margin-top:10px}
+.mau .card{min-width:0}
+.mrow{display:grid;grid-template-columns:92px minmax(0,1fr) 52px;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
+.mbar{display:flex;gap:2px;height:16px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+.mbar i{display:block;height:100%}
+.mrow .mv{font-weight:600;text-align:right;color:var(--ink)}
+.mleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--ink-2);margin-top:8px}
+.mleg span{display:inline-flex;align-items:center;gap:5px}
+.mleg i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.mtab{width:100%;border-collapse:collapse;font-size:12px}
+.mtab th,.mtab td{padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.mtab th:first-child,.mtab td:first-child{text-align:left}
+.mtab th{color:var(--ink-3);font-weight:500}
+@media(max-width:900px){.ugrid{grid-template-columns:repeat(2,minmax(0,1fr))}.mau{grid-template-columns:1fr}}
+@media(max-width:520px){.ugrid{grid-template-columns:1fr}}
 .chartcard canvas{width:100%;display:block;cursor:pointer}
 #thr{width:130px;accent-color:var(--ink-2);margin:6px 0 0}#thrVal{font-weight:700;color:var(--ink)}
 .note{font-size:12px;color:var(--ink-3);max-width:110ch;margin:2px 0 0}
@@ -240,6 +263,22 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
     </div>
   </div>
 
+
+  <section class="utility" id="utilsec">
+    <h2>Utility of this architecture (SAU and MAU)</h2>
+    <p class="usub">Each curve turns one result into a satisfaction score from 0 to 1 (SAU), using the Task 1 curves. The weighted sum of the four scores is the MAU. Markers show the model, the average of 200 simulated days, and the day on screen.</p>
+    <div class="clegend" style="margin-bottom:8px"><span><svg width="12" height="12"><rect x="2" y="2" width="8" height="8" transform="rotate(45 6 6)" fill="var(--ink-2)"/></svg>Model</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--carry)"/></svg>200 days</span><span><svg width="12" height="12"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="var(--panel)" stroke="var(--accent)" stroke-width="2.5"/></svg>This day</span></div>
+    <div class="ugrid">
+      <div class="chartcard"><h3>Volume <span>people per day</span></h3><canvas class="ucv" data-k="volume"></canvas><div class="uvals" id="uv_volume"></div></div>
+      <div class="chartcard"><h3>Peak throughput <span>people per hour</span></h3><canvas class="ucv" data-k="peak"></canvas><div class="uvals" id="uv_peak"></div></div>
+      <div class="chartcard"><h3>Average wait <span>minutes</span></h3><canvas class="ucv" data-k="wait"></canvas><div class="uvals" id="uv_wait"></div></div>
+      <div class="chartcard"><h3>Availability <span>share of time in service</span></h3><canvas class="ucv" data-k="avail"></canvas><div class="uvals" id="uv_avail"></div></div>
+    </div>
+    <div class="mau">
+      <div class="card"><h3>MAU, built from the four scores</h3><div id="maubars"></div><div class="mleg"><span><i style="background:var(--carry)"></i>Volume 0.15</span><span><i style="background:var(--empty)"></i>Peak throughput 0.25</span><span><i style="background:var(--wait-mid)"></i>Wait 0.35</span><span><i style="background:var(--charge)"></i>Availability 0.25</span></div><div class="uvals" id="mauNote" style="margin-top:6px"></div></div>
+      <div class="card"><h3>Scores</h3><table class="mtab" id="mautab"></table></div>
+    </div>
+  </section>
 
   <p class="note"><b>Bikes.</b> Streets only keeps bikes on the same street network as the shuttles. Campus paths lets bikes also use the footpaths, courtyards and crosswalks in the City of Cambridge GIS data (dashed lines on the map). Shuttles stay on the streets, and bikes keep their normal speed. Because the simulation has no geography, the paths enter as a shorter trip: building to building, a bike route is on average 4.4% shorter (0.956 of the street route), measured on the real map. Only fleets with bikes change.</p>
   <p class="note"><b>Charging.</b> Where it stands is the original rule: a vehicle charges wherever it finished its last ride, which is not realistic. At the base sends a vehicle with a low battery to the charging base, marked on the map at the Volpe site (Third St, east side of the Kendall parcel, an approximate position you can move). Instead of driving back empty it drives to the base, charges there for the same charging time, and drives back into service, so the trip there and back also keeps it away from passengers. The distance is how far a random street point is from the base (about 1.1 km on average), the same for shuttles and bikes. Go charge below sets the battery level that triggers it (default 20%). The base has as many chargers as it needs, a simplification. Because these runs are simulated live in your browser, a day is statistically the same but not draw for draw identical to the recorded days.</p>
@@ -478,7 +517,7 @@ function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{l
 (function(){let t=null;try{t=localStorage.getItem('fleet-theme')}catch(e){}if(t)setTheme(t);else themeLabel();document.addEventListener('click',e=>{if(e.target&&e.target.id==='themeBtn')setTheme(curTheme()==='dark'?'light':'dark')})})();
 function readTokens(){const cs=getComputedStyle(document.documentElement);['--map-ground','--map-bld','--map-water','--map-street','--map-street-edge','--map-major','--map-label','--map-ring','--carry','--empty','--idle','--charge','--wait-ok','--wait-mid','--wait-bad','--ink','--ink-2','--ink-3','--line','--panel','--bg','--accent','--good','--bad','--warn'].forEach(n=>tokens[n]=cs.getPropertyValue(n).trim());statDirty=true}
 const isDark=()=>curTheme()==='dark';
-new MutationObserver(()=>{themeLabel();readTokens();drawAll()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+new MutationObserver(()=>{themeLabel();readTokens();drawAll();try{drawUtility()}catch(e){}}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{themeLabel();readTokens();drawAll()});
 
 /* ---------- loading ---------- */
@@ -782,7 +821,61 @@ function buildCmp(){
   if(c.custom){const M=c.mod,ok=(b,t)=>`<br>${b?'Meets':'Misses'} ${t}`;msg+='<span style="display:block;margin-top:6px">'+
     '<b>200-day check</b>'+ok(c.avg200.peak_wait<=lim,'the 5 min wait (average peak wait '+c.avg200.peak_wait.toFixed(1)+' min)')+ok(M.ride_min<=IDX.requirement.ride_min,'the 7 min ride (longest ride '+M.ride_min.toFixed(1)+' min)')+ok(c.avg200.volume>=IDX.requirement.volume,'1,500 people per day ('+Math.round(c.avg200.volume)+')')+ok(M.peak_pax_h>=150&&M.capacity>=150,'the 150 people per hour peak (model '+Math.round(M.peak_pax_h)+')')+'</span>'}
   $('verdict').innerHTML=msg;
+  try{drawUtility()}catch(e){console.error(e)}
 }
+
+/* ---------- SAU / MAU (Task 1 curves, model.py Appendix A) ---------- */
+const SAUP={volume:[[0,0],[500,.2],[1000,.4],[1500,.8],[2000,1]],peak:[[0,0],[50,.2],[100,.5],[150,.9],[200,1]],wait:[[0,1],[5,.95],[10,.75],[15,.4],[20,.2],[30,0]],avail:[[0,0],[1,1]]};
+const SAUW={volume:.15,peak:.25,wait:.35,avail:.25};
+const SAUX={volume:[0,2000],peak:[0,200],wait:[0,30],avail:[0,1]};
+function sauf(k,x){const P=SAUP[k];if(x<=P[0][0])return P[0][1];for(let i=1;i<P.length;i++)if(x<=P[i][0]){const a=P[i-1],b=P[i];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0])}return P[P.length-1][1]}
+function dayPeak(pax){const b=new Array(12).fill(0);pax.forEach(p=>{const i=Math.min(11,Math.max(0,Math.floor(p[0]/2)));b[i]+=p[1]});return Math.max(...b)/2}
+function utilVals(){
+  const c=RUN.caseInfo,r=RUN.runInfo;let M;
+  try{M=FleetSim.modelFor(c.cfg||archCfg())}catch(e){M=null}
+  const mod=M?{volume:M.volume,peak:M.peak_pax_h,wait:M.avg_wait,avail:M.avail}:null;
+  const s200=c.avg200?{volume:c.avg200.volume,wait:c.avg200.avg_wait,avail:c.avg200.avail}:null;
+  const day={volume:r.summary.volume,peak:dayPeak(RUN.pax),wait:r.summary.avg_wait,avail:r.summary.avail};
+  return {mod,s200,day};
+}
+function mauOf(v){if(!v)return null;let t=0;const parts={};for(const k in SAUW){parts[k]=SAUW[k]*sauf(k,v[k]);t+=parts[k]}return {t,parts}}
+const fmtU={volume:v=>Math.round(v).toLocaleString('en-US'),peak:v=>v.toFixed(0),wait:v=>v.toFixed(1),avail:v=>v.toFixed(2)};
+function drawUtility(){
+  if(!RUN||!RUN.caseInfo||!$('utilsec'))return;
+  const U=utilVals(),T=tokens;if(!U.mod&&!U.day)return;
+  document.querySelectorAll('canvas.ucv').forEach(cv=>{
+    const k=cv.dataset.k,rect=cv.getBoundingClientRect(),w=rect.width,h=rect.height;if(w<20)return;
+    const dpr=Math.min(window.devicePixelRatio||1,2);cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
+    const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+    const L=30,R=8,Tp=8,B=20,pw=w-L-R,ph=h-Tp-B;let[x0,x1]=SAUX[k];
+    const vals=[U.mod&&U.mod[k],U.s200&&U.s200[k],U.day&&U.day[k]].filter(v=>v!=null);
+    if(k==='volume'||k==='peak')x1=Math.max(x1,Math.ceil(Math.max(...vals)/(k==='volume'?500:50))*(k==='volume'?500:50));
+    const X=v=>L+(Math.min(Math.max(v,x0),x1)-x0)/(x1-x0)*pw,Y=u=>Tp+(1-u)*ph;
+    g.font='10px system-ui,sans-serif';g.fillStyle=T['--ink-3'];g.strokeStyle=T['--line'];g.lineWidth=1;
+    [0,.5,1].forEach(u=>{g.beginPath();g.moveTo(L,Y(u)+.5);g.lineTo(L+pw,Y(u)+.5);g.stroke();g.textAlign='right';g.textBaseline='middle';g.fillText(u.toFixed(1),L-4,Y(u))});
+    g.textBaseline='top';g.textAlign='left';g.fillText(k==='avail'?'0':String(x0),L,Tp+ph+5);g.textAlign='right';g.fillText(k==='avail'?'1':String(x1),L+pw,Tp+ph+5);
+    g.strokeStyle=T['--ink-2'];g.lineWidth=2;g.lineJoin='round';g.beginPath();
+    const xs=SAUP[k].map(p=>p[0]).filter(x=>x>=x0&&x<=x1);if(xs[xs.length-1]<x1)xs.push(x1);
+    xs.forEach((x,i)=>{const px=X(x),py=Y(sauf(k,x));i?g.lineTo(px,py):g.moveTo(px,py)});g.stroke();
+    const mk=(v,kind)=>{if(v==null)return;const px=X(v),py=Y(sauf(k,v));
+      g.strokeStyle=T['--line'];g.lineWidth=1;g.setLineDash([3,3]);g.beginPath();g.moveTo(px,py);g.lineTo(px,Y(0));g.stroke();g.setLineDash([]);
+      if(kind==='mod'){g.save();g.translate(px,py);g.rotate(Math.PI/4);g.fillStyle=T['--ink-2'];g.strokeStyle=T['--panel'];g.lineWidth=2;g.fillRect(-5,-5,10,10);g.strokeRect(-5,-5,10,10);g.restore()}
+      else if(kind==='s200'){g.beginPath();g.arc(px,py,5,0,7);g.fillStyle=T['--carry'];g.fill();g.strokeStyle=T['--panel'];g.lineWidth=2;g.stroke()}
+      else{g.beginPath();g.rect(px-5,py-5,10,10);g.fillStyle=T['--panel'];g.fill();g.strokeStyle=T['--accent'];g.lineWidth=2.5;g.stroke()}};
+    mk(U.mod&&U.mod[k],'mod');mk(U.s200&&U.s200[k],'s200');mk(U.day&&U.day[k],'day');
+    const row=(n,v)=>v==null?'':`${n} <b>${fmtU[k](v)}</b> → ${sauf(k,v).toFixed(2)}`;
+    $('uv_'+k).innerHTML=[row('Model',U.mod&&U.mod[k]),row('200 days',U.s200&&U.s200[k]),row('This day',U.day&&U.day[k])].filter(Boolean).join('<br>');
+  });
+  const A=mauOf(U.mod),D=mauOf(U.day),cols={volume:'--carry',peak:'--empty',wait:'--wait-mid',avail:'--charge'};
+  const bar=(n,m)=>m?`<div class="mrow"><div>${n}</div><div class="mbar" title="${n} MAU ${m.t.toFixed(3)}">${Object.keys(SAUW).map(k=>`<i style="width:${m.parts[k]*100}%;background:var(${cols[k]})"></i>`).join('')}</div><div class="mv">${m.t.toFixed(3)}</div></div>`:'';
+  $('maubars').innerHTML=bar('Model',A)+bar('This day',D)+'<div class="uvals" style="display:flex;justify-content:space-between;margin:0 60px 0 100px"><span>0</span><span>MAU scale 0 to 1 (full bar = 1)</span><span>1</span></div>';
+  let h='<tr><th></th><th>Weight</th><th>Model</th><th>This day</th></tr>';
+  for(const k in SAUW){h+=`<tr><td>${{volume:'Volume',peak:'Peak throughput',wait:'Average wait',avail:'Availability'}[k]}</td><td>${SAUW[k].toFixed(2)}</td><td>${U.mod?sauf(k,U.mod[k]).toFixed(2):'–'}</td><td>${U.day?sauf(k,U.day[k]).toFixed(2):'–'}</td></tr>`}
+  h+=`<tr><td><b>MAU</b></td><td>1.00</td><td><b>${A?A.t.toFixed(3):'–'}</b></td><td><b>${D?D.t.toFixed(3):'–'}</b></td></tr>`;
+  $('mautab').innerHTML=h;
+  $('mauNote').textContent='The bars are weight times score, so their length adds up to the MAU. The 200 day markers cover volume, wait and availability. Peak throughput is not averaged over 200 days, so it appears for the model and this day only. Wait here is the average wait, as in Task 1 (not the busiest 2 h block).';
+}
+window.addEventListener('resize',()=>{try{drawUtility()}catch(e){}});
 let evPtr=0,shown=[];
 function buildEvents(){evPtr=0;shown=[];$('ticker').innerHTML=''}
 function evText(e){const d=RUN,p=e[1]==='chg'?null:d.pax[e[2]];
