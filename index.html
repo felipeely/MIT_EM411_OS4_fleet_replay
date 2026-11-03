@@ -149,6 +149,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
       <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
+      <div class="grp"><label title="Where bikes may ride">Bikes</label><div class="seg" id="segPaths" role="group" aria-label="Bike routes"><button data-v="off" aria-pressed="true" title="Bikes ride on the streets only, like the shuttles">Streets only</button><button data-v="on" aria-pressed="false" title="Bikes can also cut through campus on footpaths, courtyards and crosswalks (City of Cambridge GIS data)">Campus paths</button></div></div>
       <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button><button data-v="model" aria-pressed="false" title="One day the way the model sees it: even arrivals, average trips, no batteries">Model day</button></div></div>
     </div>
   </div>
@@ -237,6 +238,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
   </div>
 
 
+  <p class="note"><b>Bikes.</b> Streets only keeps bikes on the same street network as the shuttles. Campus paths lets bikes also use the footpaths, courtyards and crosswalks in the City of Cambridge GIS data (dashed lines on the map). Shuttles stay on the streets, and bikes keep their normal speed. Because the simulation has no geography, the paths enter as a shorter trip: building to building, a bike route is on average 4.4% shorter (0.956 of the street route), measured on the real map. Only fleets with bikes change.</p>
   <p class="note"><b>Dispatch.</b> Standard is the original rule: a vehicle driving back empty after a drop-off cannot be reassigned until it arrives. Smart sends that vehicle straight to a waiting passenger (it keeps the distance already driven and skips the rest of the return). Everything else is the same: same demand, same random numbers, same batteries and charging.</p>
   <p class="note"><b>How to read it.</b> Each dot in the first chart is one request, placed where it arrived and as high as its wait. The dashed line is the 5 minute requirement. Shaded columns show hourly demand. In the rush-hour day, tinted hours are the traffic hours, when shuttles run at 58% and bikes at 85% of normal speed. The simulation has no street map: it draws random trip lengths and random positions. For this picture each pickup, ride and empty return is placed on real streets with the same length and the same timing, so queues, battery stops and waits match the numbers in the model validation exactly. Streets, buildings and river are open data from the City of Cambridge GIS, and landmark positions are approximate.</p>
 </div>
@@ -281,9 +283,9 @@ function bikeVehicle(fr,ba,cg,mo){
  return finish({kind:'bike',pax,cost,weight,power_wh_km:power,range_km:range,speed,speed_empty:speedEmpty,cap_kwh:cap,charger_kw:kwg,label:'Bike',spec:[fr,ba,cg,mo].join('/')});
 }
 const cycleH=(v,d,f)=>d/(v.speed*f)+C.EMPTY_SHARE*d/(v.speed_empty*f)+2*C.DWELL_S/3600;
-function capacityPax(v,n,f){if(!v||n<=0)return 0;const c=Math.floor(n*v.avail+1e-9);return c*paxPerTrip(v.pax)/cycleH(v,C.TRIP_KM,f)}
+function capacityPax(v,n,f,kf){if(!v||n<=0)return 0;const c=Math.floor(n*v.avail+1e-9);return c*paxPerTrip(v.pax)/cycleH(v,C.TRIP_KM*(kf||1),f)}
 function trafficF(rush,kind,t){if(!rush)return 1;const b=Math.floor(t/C.BLOCK_H)*C.BLOCK_H;return C.TRAFFIC.blocks.includes(b)?C.TRAFFIC[kind==='road'?'road':'bike']:1}
-function shares(sv,ns,bv,nb,rush){const out={};for(const st of Object.keys(C.DEMAND)){const inT=rush&&C.TRAFFIC.blocks.includes(+st),fr=inT?C.TRAFFIC.road:1,fb=inT?C.TRAFFIC.bike:1;const cS=capacityPax(sv,ns,fr),cB=capacityPax(bv,nb,fb);out[st]=cS+cB>0?cS/(cS+cB):(ns+nb>0?ns/(ns+nb):.5)}return out}
+function shares(sv,ns,bv,nb,rush,kfb){const out={};for(const st of Object.keys(C.DEMAND)){const inT=rush&&C.TRAFFIC.blocks.includes(+st),fr=inT?C.TRAFFIC.road:1,fb=inT?C.TRAFFIC.bike:1;const cS=capacityPax(sv,ns,fr),cB=capacityPax(bv,nb,fb,kfb);out[st]=cS+cB>0?cS/(cS+cB):(ns+nb>0?ns/(ns+nb):.5)}return out}
 
 /* ---------- the fast model for one fleet (model.py evaluate, simple wait formula) ---------- */
 function modelEval(sv,ns,bv,nb,rush){
@@ -312,18 +314,23 @@ function rng32(seed){let a=seed>>>0;return function(){a=(a+0x6D2B79F5)>>>0;let t
 function poisson(lam,r){const L=Math.exp(-lam);let k=0,p=1;do{k++;p*=r()}while(p>L);return k-1}
 
 /* ---------- street graph for the display ---------- */
-let MAPD=null,ADJ=null,SP=new Map();
-function setMap(map){MAPD=map;const N=map.nodes.length;ADJ=Array.from({length:N},()=>[]);map.edges.forEach(e=>{ADJ[e[0]].push([e[1],e[2]]);ADJ[e[1]].push([e[0],e[2]])});SP=new Map()}
-function spFrom(s){let r=SP.get(s);if(r)return r;const N=ADJ.length,dist=new Float64Array(N).fill(Infinity),pred=new Int32Array(N).fill(-1),done=new Uint8Array(N);dist[s]=0;
- for(let it=0;it<N;it++){let u=-1,b=Infinity;for(let i=0;i<N;i++)if(!done[i]&&dist[i]<b){b=dist[i];u=i}if(u<0)break;done[u]=1;for(const [w,l] of ADJ[u]){if(dist[u]+l<dist[w]){dist[w]=dist[u]+l;pred[w]=u}}}
- r={dist,pred};SP.set(s,r);return r}
-function pathNodes(a,b){if(a===b)return [a];const {pred}=spFrom(a),out=[b];while(out[out.length-1]!==a){const p=pred[out[out.length-1]];if(p<0)return [a,b];out.push(p)}return out.reverse()}
-function nodeAt(src,km,gr){const {dist}=spFrom(src),target=km*1000,tol=Math.max(60,.12*target),ok=[];let best=src,bd=Infinity;
+let MAPD=null,ADJ=null,ADJB=null,SP=new Map(),SPB=new Map();
+function setMap(map){MAPD=map;const N=map.ns||map.nodes.length;ADJ=Array.from({length:N},()=>[]);map.edges.forEach(e=>{ADJ[e[0]].push([e[1],e[2]]);ADJ[e[1]].push([e[0],e[2]])});SP=new Map();
+ ADJB=null;SPB=new Map();if(map.bedges){const NB=map.nodes.length;ADJB=Array.from({length:NB},()=>[]);map.bedges.forEach(e=>{ADJB[e[0]].push([e[1],e[2]]);ADJB[e[1]].push([e[0],e[2]])})}}
+/* binary heap Dijkstra (the bike graph has about 3200 nodes) */
+function spFrom(s,B){const cache=B?SPB:SP,adj=B?ADJB:ADJ;let r=cache.get(s);if(r)return r;const N=adj.length,dist=new Float64Array(N).fill(Infinity),pred=new Int32Array(N).fill(-1);dist[s]=0;
+ const h=[[0,s]];const push=x=>{h.push(x);let i=h.length-1;while(i>0){const p=(i-1)>>1;if(h[p][0]<=h[i][0])break;[h[p],h[i]]=[h[i],h[p]];i=p}};
+ const pop=()=>{const top=h[0],last=h.pop();if(h.length){h[0]=last;let i=0;for(;;){let l=2*i+1,r2=l+1,m=i;if(l<h.length&&h[l][0]<h[m][0])m=l;if(r2<h.length&&h[r2][0]<h[m][0])m=r2;if(m===i)break;[h[m],h[i]]=[h[i],h[m]];i=m}}return top};
+ while(h.length){const [d,u]=pop();if(d>dist[u])continue;for(const [w,l] of adj[u]){const nd=d+l;if(nd<dist[w]){dist[w]=nd;pred[w]=u;push([nd,w])}}}
+ r={dist,pred};cache.set(s,r);return r}
+function pathNodes(a,b,B){if(a===b)return [a];const {pred}=spFrom(a,B),out=[b];while(out[out.length-1]!==a){const p=pred[out[out.length-1]];if(p<0)return [a,b];out.push(p)}return out.reverse()}
+function nodeAt(src,km,gr,B){const {dist}=spFrom(src,B),target=km*1000,tol=Math.max(60,.12*target),ok=[];let best=src,bd=Infinity;
  for(let i=0;i<dist.length;i++){const d=dist[i];if(!isFinite(d))continue;const e=Math.abs(d-target);if(e<=tol)ok.push(i);if(e<bd){bd=e;best=i}}
  return ok.length?ok[Math.floor(gr()*ok.length)]:best}
 
 /* ---------- the day simulation for one vehicle type (sim_day.simulate_type), optionally with the display log ---------- */
-function simType(v,n,share,rnd,kind,rush,disp,smart){
+function simType(v,n,share,rnd,kind,rush,disp,smart,kfb){
+ const kf=(kind==='bike'&&kfb)?kfb:1,GB=kind==='bike'&&!!kfb&&!!ADJB;
  const parties=[];
  for(const [st,dem] of Object.entries(C.DEMAND)){const sh=share[st],rate=dem*sh/PAXMEAN,k=rate>0?poisson(rate*C.BLOCK_H,rnd):0;
   for(let q=0;q<k;q++){const t=+st+C.BLOCK_H*rnd(),u=rnd();let acc=0,size=6;for(const [s,p] of C.PARTY){acc+=p;if(u<acc){size=s;break}}parties.push([t,size])}}
@@ -341,19 +348,19 @@ function simType(v,n,share,rnd,kind,rush,disp,smart){
   if(smart&&freeAt[i]>t&&canRe[i]&&dropEnd[i]<=t&&t<retEnd[i]){/* smart dispatch: the vehicle was driving back empty, it keeps the distance driven and skips the rest */
    const frac=(t-dropEnd[i])/(retEnd[i]-dropEnd[i]);energy[i]+=retE[i]*(1-frac);freeAt[i]=t;
    if(disp){const sg=vsegs[i],last=sg[sg.length-1];if(last&&last[2]===5){const pth=last[3];let k=Math.round(frac*(pth.length-1));k=Math.max(0,Math.min(pth.length-1,k));last[5]=R3(last[4]+(last[5]-last[4])*frac);last[3]=pth.slice(0,k+1);last[1]=R(t);pos[i]=pth[k]}}}
-  const start=Math.max(t,freeAt[i]),pickKm=C.DETOUR*.5*Math.sqrt(C.AREA/Math.max(idleN,1)),f=trafficF(rush,kind,start),pickH=pickKm/(v.speed_empty*f);
-  const d=C.RIDE[0]+(C.RIDE[1]-C.RIDE[0])*rnd(),empty=rnd()<C.EMPTY_SHARE;
+  const start=Math.max(t,freeAt[i]),pickKm=kf*C.DETOUR*.5*Math.sqrt(C.AREA/Math.max(idleN,1)),f=trafficF(rush,kind,start),pickH=pickKm/(v.speed_empty*f);
+  const d=(C.RIDE[0]+(C.RIDE[1]-C.RIDE[0])*rnd())*kf,empty=rnd()<C.EMPTY_SHARE;
   const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,dur=rideH+2*DW+retH+pickH;
   const e0=energy[i];energy[i]-=v.power_wh_km*(d*(empty?2:1)+pickKm)/1000;
   let end=start+dur,ch=0;
   if(energy[i]<Math.max(emax,C.CHARGE_BELOW*v.cap_kwh)){ch=v.charge_h*(1-energy[i]/v.cap_kwh);end+=ch;chg+=ch}
   waits[r]=start-t+pickH;done[r]=start+dur;arr[r]=t;pr[r]=reqs[r][1];
-  if(disp){const cap=v.cap_kwh,here=pos[i],origin=nodeAt(here,pickKm,disp.gr),dest=nodeAt(origin,d,disp.gr);
+  if(disp){const cap=v.cap_kwh,here=pos[i],origin=nodeAt(here,pickKm,disp.gr,GB),dest=nodeAt(origin,d,disp.gr,GB);
    const t1=start+pickH,t2=t1+DW,t3=t2+rideH,t4=t3+DW,t5=t4+retH,eA=(e0-v.power_wh_km*pickKm/1000)/cap,eB=eA-v.power_wh_km*d/1000/cap,sg=vsegs[i];
-   sg.push([R(start),R(t1),1,pathNodes(here,origin),R3(e0/cap),R3(eA)]);sg.push([R(t1),R(t2),2,[origin],R3(eA),R3(eA)]);
-   sg.push([R(t2),R(t3),3,pathNodes(origin,dest),R3(eA),R3(eB)]);sg.push([R(t3),R(t4),4,[dest],R3(eB),R3(eB)]);
+   sg.push([R(start),R(t1),1,pathNodes(here,origin,GB),R3(e0/cap),R3(eA)]);sg.push([R(t1),R(t2),2,[origin],R3(eA),R3(eA)]);
+   sg.push([R(t2),R(t3),3,pathNodes(origin,dest,GB),R3(eA),R3(eB)]);sg.push([R(t3),R(t4),4,[dest],R3(eB),R3(eB)]);
    let last=dest,eNow=eB;
-   if(empty){const back=nodeAt(dest,d,disp.gr);eNow=eB-v.power_wh_km*d/1000/cap;sg.push([R(t4),R(t5),5,pathNodes(dest,back),R3(eB),R3(eNow)]);last=back}
+   if(empty){const back=nodeAt(dest,d,disp.gr,GB);eNow=eB-v.power_wh_km*d/1000/cap;sg.push([R(t4),R(t5),5,pathNodes(dest,back,GB),R3(eB),R3(eNow)]);last=back}
    if(ch>0)sg.push([R(t5),R(t5+ch),6,[last],R3(eNow),1]);
    pos[i]=last;pax.push([R(t),reqs[r][2],origin,dest,R(t1),R(t3),i,Math.round(waits[r]*6000)/100,done[r]<=24?1:0]);
   }
@@ -370,16 +377,16 @@ function dayStats(parts,vehH){
  return {volume:vol,avg_wait:sp>0?sw/sp*60:0,peak_wait:peak,over5:A.length?over/A.length*100:0,avail:1-chg/vehH,requests:A.length,people:sp};
 }
 function runDay(cfg,rep,disp){
- const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,sh=shares(sv,cfg.ns,bv,cfg.nb,rush),shB={};for(const k in sh)shB[k]=1-sh[k];
+ const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,kfb=cfg.paths?(cfg.pathFactor||(MAPD&&MAPD.bike_factor&&MAPD.bike_factor.mean)||1):0,sh=shares(sv,cfg.ns,bv,cfg.nb,rush,kfb),shB={};for(const k in sh)shB[k]=1-sh[k];
  const rnd=rng32(1000+rep),gr=disp?rng32(777+rep):null,parts=[],types=[];let vehH=0;
- [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart));types.push([v,n,k]);vehH+=n*24});
+ [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart,kfb));types.push([v,n,k]);vehH+=n*24});
  const stats=dayStats(parts,vehH);
  if(!disp)return stats;
  const fleets=[],veh=[],allpax=[];let off=0;
  parts.forEach((p,ti)=>{const [v,n,k]=types[ti];fleets.push({kind:k,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(paxPerTrip(v.pax)*100)/100});
   for(let i=0;i<n;i++)veh.push([ti,p.vsegs[i].length?p.vsegs[i][0][3][0]:0,p.vsegs[i]]);p.pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n});
  allpax.sort((a,b)=>a[0]-b[0]);
- return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard'}};
+ return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard',paths:!!cfg.paths}};
 }
 /* 200 days (no display), then the typical and worst days with the display log */
 function runCustom(cfg,reps,onProgress){
@@ -416,8 +423,8 @@ function runModelDay(cfg){
     const start=Math.max(t+delayH,freeAt[i]),d=C.TRIP_KM,pickKm=pickH*v.speed_empty*f;
     const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,end=start+pickH+2*DW+rideH+retH;
     const here=pos[i],origin=nodeAt(here,pickKm,gr),dest=nodeAt(origin,d,gr),t1=start+pickH,t2=t1+DW,t3=t2+rideH,t4=t3+DW,t5=t4+retH,sg=vsegs[i];
-    sg.push([R(start),R(t1),1,pathNodes(here,origin),1,1]);sg.push([R(t1),R(t2),2,[origin],1,1]);sg.push([R(t2),R(t3),3,pathNodes(origin,dest),1,1]);sg.push([R(t3),R(t4),4,[dest],1,1]);
-    let last=dest;if(empty){const back=nodeAt(dest,d,gr);sg.push([R(t4),R(t5),5,pathNodes(dest,back),1,1]);last=back}
+    sg.push([R(start),R(t1),1,pathNodes(here,origin,GB),1,1]);sg.push([R(t1),R(t2),2,[origin],1,1]);sg.push([R(t2),R(t3),3,pathNodes(origin,dest,GB),1,1]);sg.push([R(t3),R(t4),4,[dest],1,1]);
+    let last=dest;if(empty){const back=nodeAt(dest,d,gr);sg.push([R(t4),R(t5),5,pathNodes(dest,back,GB),1,1]);last=back}
     pos[i]=last;freeAt[i]=end-pickH;   // the model does not count the pickup drive as busy time
     pax.push([R(t),people,origin,dest,R(t1),R(t3),i,Math.round((start-t+pickH)*6000)/100,end<=24?1:0]);
    }
@@ -445,7 +452,7 @@ const NAMES=['1 Reference mixed','2 Small shuttles only','3 Two-seat shuttles on
 const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet'];
 const ST_NAMES=['Idle','Driving to passenger','Boarding','Carrying passengers','Dropping off','Driving empty','Charging'];
 let MAP,IDX,RUN=null,CACHE={},view={cx:0,cy:0,k:1,fit:1},W=0,H=0,DPR=1,time=8,playing=false,lastTs=0,speed=6;
-const sel={arch:0,scn:'normal',run:'typical',disp:'std'};
+const sel={arch:0,scn:'normal',run:'typical',disp:'std',paths:'off'};
 let showB=true,showR=true,tokens={};
 const cvs=$('map'),ctx=cvs.getContext('2d');
 let statLayer=document.createElement('canvas'),statDirty=true;
@@ -471,7 +478,7 @@ function loadSaved(){try{return JSON.parse(localStorage.getItem('fleet-state')||
 function applySavedControls(o){if(!o)return;
   Object.assign(sel,o.sel||{});
   const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
-  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');
+  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');mark('segPaths',sel.paths||'off');
   KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e&&o.ids&&o.ids[i]!=null)e.value=o.ids[i]});
   if($('speed'))speed=+$('speed').value||speed}
 window.addEventListener('pagehide',saveState);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
@@ -480,7 +487,9 @@ setInterval(saveState,3000);
 async function init(){
   readTokens();
   try{[MAP,IDX]=await Promise.all([getJSON('map.json'),getJSON('index.json')])}catch(e){$('loading').textContent='Could not load the data files ('+e.message+').';return}
+  MAP.ns=MAP.nodes.length;if(MAP.bnodes)MAP.nodes=MAP.nodes.concat(MAP.bnodes);
   const N=MAP.nodes;
+  (MAP.bedges||[]).forEach(e=>{const a=e[0],b=e[1];let pts=e[3]||[N[a],N[b]];if(e[3]){const L=e[3],h=Math.hypot;if(h(L[0][0]-N[b][0],L[0][1]-N[b][1])+h(L[L.length-1][0]-N[a][0],L[L.length-1][1]-N[a][1])<h(L[0][0]-N[a][0],L[0][1]-N[a][1])+h(L[L.length-1][0]-N[b][0],L[L.length-1][1]-N[b][1])){pts=L.slice().reverse();e[3]=pts}}const k1=a*4096+b,k2=b*4096+a;if(!edgeLine.has(k1)){edgeLine.set(k1,pts);edgeLine.set(k2,pts.slice().reverse())}});
   MAP.edges.forEach(e=>{const a=e[0],b=e[1];let pts=e[3]||[N[a],N[b]];if(e[3]){const L=e[3],h=Math.hypot;if(h(L[0][0]-N[b][0],L[0][1]-N[b][1])+h(L[L.length-1][0]-N[a][0],L[L.length-1][1]-N[a][1])<h(L[0][0]-N[a][0],L[0][1]-N[a][1])+h(L[L.length-1][0]-N[b][0],L[L.length-1][1]-N[b][1])){pts=L.slice().reverse();e[3]=pts}}edgeLine.set(a*4096+b,pts);edgeLine.set(b*4096+a,pts.slice().reverse())});
   FleetSim.setMap(MAP);buildSeg();buildBuilder();const SAVED=loadSaved();applySavedControls(SAVED);buildLegend();resize();await loadRun();if(SAVED&&typeof SAVED.time==='number'){time=SAVED.time;statDirty=true;drawAll();updatePanel(true)}$('loading').hidden=true;
   requestAnimationFrame(tick);
@@ -491,24 +500,27 @@ function buildSeg(){
   box.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);loadRun()});
   $('segScn').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.scn=b.dataset.v;pressed($('segScn'),b);loadRun()});
   $('segDisp').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.disp=b.dataset.v;pressed($('segDisp'),b);loadRun()});
+  $('segPaths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.paths=b.dataset.v;pressed($('segPaths'),b);statDirty=true;loadRun()});
   $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
 }
 function pressed(box,btn){[...box.children].forEach(c=>c.setAttribute('aria-pressed',c===btn))}
 function buildLegend(){
   const sw=(c,shape)=>shape==='bike'?`<svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="${c}"/></svg>`:`<svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="${c}"/></svg>`;
-  $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span>`;
+  $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span><span id="lgPaths" hidden><svg width="18" height="12"><line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink-2)" stroke-width="1.6" stroke-dasharray="4 3"/></svg>campus footpath (bikes only)</span>`;
 }
+function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?'_paths':'');
+  const find=k=>(IDX[k]||[]).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);return find(key)||find('cases'+(sel.disp==='smart'?'_smart':''))||find('cases')}
 async function loadRun(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
   if(sel.run==='model'){return loadModelPreset()}
-  const c=(sel.disp==='smart'?IDX.cases_smart:IDX.cases).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  const c=caseFor();
   const r=c.runs.find(r=>r.label===sel.run);
   $('loading').hidden=false;$('loading').textContent='Loading '+SHORT[sel.arch]+'…';
   let d=CACHE[r.file];if(!d){try{d=await getJSON(r.file)}catch(e){$('loading').textContent='Could not load '+r.file;return}CACHE[r.file]=d;prep(d)}
   RUN=d;RUN.caseInfo=c;RUN.runInfo=r;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
-  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')')+(sel.disp==='smart'?', smart dispatch':'');
+  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')')+(sel.disp==='smart'?', smart dispatch':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?', bikes on campus paths':'');
   buildStates();buildCmp();buildEvents();
   statDirty=true;drawAll();updatePanel(true);
 }
@@ -527,7 +539,7 @@ function buildBuilder(){
 function setBuilder(sh,ns,bk,nb){['s_ch','s_ba','s_cg','s_mo','s_au'].forEach((id,i)=>$(id).value=sh[i]);['b_fr','b_ba','b_cg','b_mo'].forEach((id,i)=>$(id).value=bk[i]);$('ns').value=ns;$('nb').value=nb;sumBuilder()}
 function readCfg(){
   const ns=Math.max(0,Math.min(80,Math.floor(+$('ns').value||0))),nb=Math.max(0,Math.min(150,Math.floor(+$('nb').value||0)));
-  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart'};
+  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1};
 }
 function sumBuilder(){
   const c=readCfg(),F=FleetSim,parts=[];let cost=0;
@@ -546,7 +558,7 @@ async function loadCustom(){
   d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
   RUN=d;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+', your fleet';
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+(cfg.paths&&cfg.nb>0?', bikes on campus paths':'')+', your fleet';
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 
@@ -555,7 +567,7 @@ async function loadModelPreset(){
   playing=false;$('play').textContent='Play';$('loading').hidden=false;$('loading').textContent='Building the model day…';
   await new Promise(r=>setTimeout(r,30));
   const key='P'+JSON.stringify(cfg);let d=CACHE[key];if(!d){d=FleetSim.runModelDay(cfg);prep(d);CACHE[key]=d}
-  const c=(sel.disp==='smart'?IDX.cases_smart:IDX.cases).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);
+  const c=caseFor();
   d.caseInfo={custom:true,avg200:c.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep:0,summary:d.summary};
   RUN=d;$('loading').hidden=true;$('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
   $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+'the model day (even arrivals, average trips, no batteries)';
@@ -634,6 +646,8 @@ cvs.addEventListener('pointerup',endp);cvs.addEventListener('pointercancel',endp
 
 /* ---------- drawing the map ---------- */
 function nightAlpha(t){const h=t%24;let a=0;if(h<5)a=1;else if(h<7)a=1-(h-5)/2;else if(h>21)a=1;else if(h>19)a=(h-19)/2;return a*(isDark()?0.25:0.32)}
+function pathsOn_(){return sel.paths==='on'&&!!MAP.bedges}
+function pathsLayerOn(){return pathsOn_()&&RUN&&RUN.fleets&&RUN.fleets.some(f=>f.kind==='bike')}
 function drawStatic(){
   const g=statLayer.getContext('2d');g.setTransform(DPR,0,0,DPR,0,0);g.clearRect(0,0,W,H);
   g.fillStyle=tokens['--map-ground'];g.fillRect(0,0,W,H);
@@ -647,6 +661,8 @@ function drawStatic(){
   const wk=e=>Math.max(1.6,(e[4]>0?11:7.5)*view.k);
   drawE(e=>wk(e)+1.4,tokens['--map-street-edge']);
   drawE(e=>wk(e),tokens['--map-street']);
+  {const lg=document.getElementById('lgPaths');if(lg)lg.hidden=!pathsLayerOn()}
+  if(pathsLayerOn()){g.lineCap='round';g.lineJoin='round';g.setLineDash([4,3]);g.strokeStyle=tokens['--ink-2'];g.globalAlpha=.8;g.lineWidth=Math.max(1.2,1.6*Math.sqrt(view.k/view.fit));MAP.bedges.forEach(e=>{if(e[4]!==1)return;path(e[3]||[N[e[0]],N[e[1]]],false);g.stroke()});g.setLineDash([]);g.globalAlpha=1}
   // service boundary
   g.setLineDash([8,6]);g.lineWidth=1.6;g.strokeStyle=tokens['--map-ring'];g.beginPath();g.arc(sx(0),sy(0),MAP.radius*view.k,0,Math.PI*2);g.stroke();g.setLineDash([]);
   // labels
