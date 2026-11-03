@@ -417,7 +417,7 @@ function modelFor(cfg){const sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg
 function runModelDay(cfg){
  const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,gr=rng32(4242);
  const halves=[[sv,cfg.ns,'road'],[bv,cfg.nb,'bike']].filter(h=>h[0]&&h[1]>0);
- const R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3,DW=C.DWELL_S/3600;
+ const GB=false,R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3,DW=C.DWELL_S/3600;   // the model day uses the street graph
  const capOf=(v,n,f)=>capacityPax(v,n,f);
  const fleets=[],veh=[],allpax=[];let off=0,vehIdx=0;
  // demand share per block, as in the model
@@ -531,6 +531,9 @@ function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.path
 function needsLive(){return sel.base==='on'||sel.thr!==20}
 function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
 async function loadRun(){
+  try{await loadRun_()}catch(err){console.error(err);$('loading').hidden=false;$('loading').textContent='Something went wrong ('+err.message+'). Showing the typical day instead.';
+    if(sel.run==='model'||needsLive()){sel.run='typical';sel.base='off';sel.thr=20;try{const m=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};m('segRun','typical');m('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';await loadRun_()}catch(e2){console.error(e2)}}}}
+async function loadRun_(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
   if(sel.run==='model'){return loadModelPreset()}
