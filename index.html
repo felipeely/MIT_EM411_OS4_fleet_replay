@@ -472,13 +472,14 @@ let showB=true,showR=true,tokens={};
 const cvs=$('map'),ctx=cvs.getContext('2d');
 let statLayer=document.createElement('canvas'),statDirty=true;
 const edgeLine=new Map();
-function curTheme(){const t=document.documentElement.getAttribute('data-theme');return t||'light'}
-function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('fleet-theme',t)}catch(e){}const b=document.getElementById('themeBtn');if(b)b.textContent=t==='dark'?'Light':'Dark'}
-(function(){let t='light';try{t=localStorage.getItem('fleet-theme')||'light'}catch(e){}setTheme(t);document.addEventListener('click',e=>{if(e.target&&e.target.id==='themeBtn')setTheme(curTheme()==='dark'?'light':'dark')})})();
+function curTheme(){const t=document.documentElement.getAttribute('data-theme');return t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+function themeLabel(){const b=document.getElementById('themeBtn');if(b)b.textContent=curTheme()==='dark'?'Light':'Dark'}
+function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('fleet-theme',t)}catch(e){}themeLabel()}
+(function(){let t=null;try{t=localStorage.getItem('fleet-theme')}catch(e){}if(t)setTheme(t);else themeLabel();document.addEventListener('click',e=>{if(e.target&&e.target.id==='themeBtn')setTheme(curTheme()==='dark'?'light':'dark')})})();
 function readTokens(){const cs=getComputedStyle(document.documentElement);['--map-ground','--map-bld','--map-water','--map-street','--map-street-edge','--map-major','--map-label','--map-ring','--carry','--empty','--idle','--charge','--wait-ok','--wait-mid','--wait-bad','--ink','--ink-2','--ink-3','--line','--panel','--bg','--accent','--good','--bad','--warn'].forEach(n=>tokens[n]=cs.getPropertyValue(n).trim());statDirty=true}
 const isDark=()=>curTheme()==='dark';
-new MutationObserver(()=>{readTokens();drawAll()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{readTokens();drawAll()});
+new MutationObserver(()=>{themeLabel();readTokens();drawAll()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{themeLabel();readTokens();drawAll()});
 
 /* ---------- loading ---------- */
 function loadScriptData(u){return new Promise((res,rej)=>{window.__J=window.__J||{};if(window.__J[u])return res(window.__J[u]);const sc=document.createElement('script');sc.src=u.replace(/\.json$/,'.js');sc.onload=()=>window.__J[u]?res(window.__J[u]):rej(new Error(u+' empty'));sc.onerror=()=>rej(new Error(u+' not found'));document.head.appendChild(sc)})}
