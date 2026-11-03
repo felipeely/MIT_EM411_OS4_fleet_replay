@@ -125,6 +125,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
 .clegend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .clegend svg{flex:none}
 .chartcard canvas{width:100%;display:block;cursor:pointer}
+#thr{width:130px;accent-color:var(--ink-2);margin:6px 0 0}#thrVal{font-weight:700;color:var(--ink)}
 .note{font-size:12px;color:var(--ink-3);max-width:110ch;margin:2px 0 0}
 .note b{color:var(--ink-2);font-weight:600}
 #loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--f-head);font-size:16px;color:var(--ink-2);background:var(--map-ground);z-index:6}
@@ -150,6 +151,8 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
       <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
       <div class="grp"><label title="Where bikes may ride">Bikes</label><div class="seg" id="segPaths" role="group" aria-label="Bike routes"><button data-v="off" aria-pressed="true" title="Bikes ride on the streets only, like the shuttles">Streets only</button><button data-v="on" aria-pressed="false" title="Bikes can also cut through campus on footpaths, courtyards and crosswalks (City of Cambridge GIS data)">Campus paths</button></div></div>
+      <div class="grp"><label title="Where a vehicle charges">Charging</label><div class="seg" id="segBase" role="group" aria-label="Where vehicles charge"><button data-v="off" aria-pressed="true" title="Original rule: a vehicle charges where it stands (not realistic)">Where it stands</button><button data-v="on" aria-pressed="false" title="A low vehicle drives to the charging base at the Volpe site, charges there and drives back into service">At the base</button></div></div>
+      <div class="grp"><label for="thr" title="A vehicle goes to charge when its battery would fall below this share after the ride. Shuttles never go lower than the reserve for one more longest ride and return, so low values change little for them.">Go charge below <b id="thrVal">20%</b></label><input type="range" id="thr" min="10" max="50" step="5" value="20"></div>
       <div class="grp"><label>Which run</label><div class="seg" id="segRun" role="group" aria-label="Which simulated day"><button data-v="typical" aria-pressed="true">Typical day</button><button data-v="worst" aria-pressed="false">Worst of 200</button><button data-v="model" aria-pressed="false" title="One day the way the model sees it: even arrivals, average trips, no batteries">Model day</button></div></div>
     </div>
   </div>
@@ -239,6 +242,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
 
 
   <p class="note"><b>Bikes.</b> Streets only keeps bikes on the same street network as the shuttles. Campus paths lets bikes also use the footpaths, courtyards and crosswalks in the City of Cambridge GIS data (dashed lines on the map). Shuttles stay on the streets, and bikes keep their normal speed. Because the simulation has no geography, the paths enter as a shorter trip: building to building, a bike route is on average 4.4% shorter (0.956 of the street route), measured on the real map. Only fleets with bikes change.</p>
+  <p class="note"><b>Charging.</b> Where it stands is the original rule: a vehicle charges wherever it finished its last ride, which is not realistic. At the base sends a vehicle with a low battery to the charging base, marked on the map at the Volpe site (Third St, east side of the Kendall parcel, an approximate position you can move). Instead of driving back empty it drives to the base, charges there for the same charging time, and drives back into service, so the trip there and back also keeps it away from passengers. The distance is how far a random street point is from the base (about 1.1 km on average), the same for shuttles and bikes. Go charge below sets the battery level that triggers it (default 20%). The base has as many chargers as it needs, a simplification. Because these runs are simulated live in your browser, a day is statistically the same but not draw for draw identical to the recorded days.</p>
   <p class="note"><b>Dispatch.</b> Standard is the original rule: a vehicle driving back empty after a drop-off cannot be reassigned until it arrives. Smart sends that vehicle straight to a waiting passenger (it keeps the distance already driven and skips the rest of the return). Everything else is the same: same demand, same random numbers, same batteries and charging.</p>
   <p class="note"><b>How to read it.</b> Each dot in the first chart is one request, placed where it arrived and as high as its wait. The dashed line is the 5 minute requirement. Shaded columns show hourly demand. In the rush-hour day, tinted hours are the traffic hours, when shuttles run at 58% and bikes at 85% of normal speed. The simulation has no street map: it draws random trip lengths and random positions. For this picture each pickup, ride and empty return is placed on real streets with the same length and the same timing, so queues, battery stops and waits match the numbers in the model validation exactly. Streets, buildings and river are open data from the City of Cambridge GIS, and landmark positions are approximate.</p>
 </div>
@@ -328,9 +332,15 @@ function nodeAt(src,km,gr,B){const {dist}=spFrom(src,B),target=km*1000,tol=Math.
  for(let i=0;i<dist.length;i++){const d=dist[i];if(!isFinite(d))continue;const e=Math.abs(d-target);if(e<=tol)ok.push(i);if(e<bd){bd=e;best=i}}
  return ok.length?ok[Math.floor(gr()*ok.length)]:best}
 
+/* like nodeAt, but among the nodes at the right distance take the one whose distance to the base is closest to the wanted one (used when a vehicle must go to the base after the drop-off) */
+function nodeAtNear(src,km,gr,B,bn,kb){const {dist}=spFrom(src,B),db=spFrom(bn,B).dist,target=km*1000,tol=Math.max(60,.12*target);let best=-1,be=Infinity;
+ for(let i=0;i<dist.length;i++){const d=dist[i];if(!isFinite(d)||Math.abs(d-target)>tol)continue;const e=Math.abs(db[i]-kb*1000);if(e<be){be=e;best=i}}
+ return best>=0?best:nodeAt(src,km,gr,B)}
+
 /* ---------- the day simulation for one vehicle type (sim_day.simulate_type), optionally with the display log ---------- */
-function simType(v,n,share,rnd,kind,rush,disp,smart,kfb){
+function simType(v,n,share,rnd,kind,rush,disp,smart,kfb,bs){
  const kf=(kind==='bike'&&kfb)?kfb:1,GB=kind==='bike'&&!!kfb&&!!ADJB;
+ const thrF=(bs&&bs.thr!=null)?bs.thr:C.CHARGE_BELOW,BASE=!!(bs&&bs.on&&MAPD&&MAPD.base),brnd=BASE?rng32(bs.seed+(kind==='bike'?77:0)):null,bdist=BASE?((kind==='bike'&&kfb&&MAPD.base.dist_bike)?MAPD.base.dist_bike:MAPD.base.dist_street):null,bnode=BASE?MAPD.base.node:-1;
  const parties=[];
  for(const [st,dem] of Object.entries(C.DEMAND)){const sh=share[st],rate=dem*sh/PAXMEAN,k=rate>0?poisson(rate*C.BLOCK_H,rnd):0;
   for(let q=0;q<k;q++){const t=+st+C.BLOCK_H*rnd(),u=rnd();let acc=0,size=6;for(const [s,p] of C.PARTY){acc+=p;if(u<acc){size=s;break}}parties.push([t,size])}}
@@ -350,22 +360,26 @@ function simType(v,n,share,rnd,kind,rush,disp,smart,kfb){
    if(disp){const sg=vsegs[i],last=sg[sg.length-1];if(last&&last[2]===5){const pth=last[3];let k=Math.round(frac*(pth.length-1));k=Math.max(0,Math.min(pth.length-1,k));last[5]=R3(last[4]+(last[5]-last[4])*frac);last[3]=pth.slice(0,k+1);last[1]=R(t);pos[i]=pth[k]}}}
   const start=Math.max(t,freeAt[i]),pickKm=kf*C.DETOUR*.5*Math.sqrt(C.AREA/Math.max(idleN,1)),f=trafficF(rush,kind,start),pickH=pickKm/(v.speed_empty*f);
   const d=(C.RIDE[0]+(C.RIDE[1]-C.RIDE[0])*rnd())*kf,empty=rnd()<C.EMPTY_SHARE;
-  const rideH=d/(v.speed*f),retH=empty?d/(v.speed_empty*f):0,dur=rideH+2*DW+retH+pickH;
-  const e0=energy[i];energy[i]-=v.power_wh_km*(d*(empty?2:1)+pickKm)/1000;
-  let end=start+dur,ch=0;
-  if(energy[i]<Math.max(emax,C.CHARGE_BELOW*v.cap_kwh)){ch=v.charge_h*(1-energy[i]/v.cap_kwh);end+=ch;chg+=ch}
+  const rideH=d/(v.speed*f),e0=energy[i],eLoaded=e0-v.power_wh_km*(d+pickKm)/1000,thrE=Math.max(emax,thrF*v.cap_kwh);
+  let retH=empty?d/(v.speed_empty*f):0,dur=rideH+2*DW+retH+pickH,end,ch=0,toBase=false,kb=0,goH=0;
+  if(BASE&&eLoaded-(empty?v.power_wh_km*d/1000:0)<thrE){/* battery low: instead of driving back empty, drive to the base, charge there and drive back into service */
+   toBase=true;kb=bdist[Math.floor(brnd()*bdist.length)];retH=0;dur=rideH+2*DW+pickH;goH=kb/(v.speed_empty*f);
+   const eArr=Math.max(eLoaded-v.power_wh_km*kb/1000,0);ch=v.charge_h*(1-eArr/v.cap_kwh);end=start+dur+goH+ch+goH;chg+=ch+2*goH;energy[i]=v.cap_kwh-v.power_wh_km*kb/1000}
+  else{energy[i]=eLoaded-(empty?v.power_wh_km*d/1000:0);end=start+dur;if(energy[i]<thrE){ch=v.charge_h*(1-energy[i]/v.cap_kwh);end+=ch;chg+=ch}}
   waits[r]=start-t+pickH;done[r]=start+dur;arr[r]=t;pr[r]=reqs[r][1];
-  if(disp){const cap=v.cap_kwh,here=pos[i],origin=nodeAt(here,pickKm,disp.gr,GB),dest=nodeAt(origin,d,disp.gr,GB);
+  if(disp){const cap=v.cap_kwh,here=pos[i],origin=nodeAt(here,pickKm,disp.gr,GB),dest=toBase?nodeAtNear(origin,d,disp.gr,GB,bnode,kb):nodeAt(origin,d,disp.gr,GB);
    const t1=start+pickH,t2=t1+DW,t3=t2+rideH,t4=t3+DW,t5=t4+retH,eA=(e0-v.power_wh_km*pickKm/1000)/cap,eB=eA-v.power_wh_km*d/1000/cap,sg=vsegs[i];
    sg.push([R(start),R(t1),1,pathNodes(here,origin,GB),R3(e0/cap),R3(eA)]);sg.push([R(t1),R(t2),2,[origin],R3(eA),R3(eA)]);
    sg.push([R(t2),R(t3),3,pathNodes(origin,dest,GB),R3(eA),R3(eB)]);sg.push([R(t3),R(t4),4,[dest],R3(eB),R3(eB)]);
    let last=dest,eNow=eB;
-   if(empty){const back=nodeAt(dest,d,disp.gr,GB);eNow=eB-v.power_wh_km*d/1000/cap;sg.push([R(t4),R(t5),5,pathNodes(dest,back,GB),R3(eB),R3(eNow)]);last=back}
-   if(ch>0)sg.push([R(t5),R(t5+ch),6,[last],R3(eNow),1]);
+   if(empty&&!toBase){const back=nodeAt(dest,d,disp.gr,GB);eNow=eB-v.power_wh_km*d/1000/cap;sg.push([R(t4),R(t5),5,pathNodes(dest,back,GB),R3(eB),R3(eNow)]);last=back}
+   if(toBase){const eBase=Math.max(eB-v.power_wh_km*kb/1000/cap,0),back=nodeAt(bnode,kb,disp.gr,GB),eBack=1-v.power_wh_km*kb/1000/cap;
+    sg.push([R(t4),R(t4+goH),5,pathNodes(dest,bnode,GB),R3(eB),R3(eBase)]);sg.push([R(t4+goH),R(t4+goH+ch),6,[bnode],R3(eBase),1]);sg.push([R(t4+goH+ch),R(t4+2*goH+ch),5,pathNodes(bnode,back,GB),1,R3(eBack)]);last=back}
+   else if(ch>0)sg.push([R(t5),R(t5+ch),6,[last],R3(eNow),1]);
    pos[i]=last;pax.push([R(t),reqs[r][2],origin,dest,R(t1),R(t3),i,Math.round(waits[r]*6000)/100,done[r]<=24?1:0]);
   }
-  if(ch>0)energy[i]=v.cap_kwh;freeAt[i]=end;
-  if(smart){dropEnd[i]=start+dur-retH;retEnd[i]=start+dur;retE[i]=empty?v.power_wh_km*d/1000:0;canRe[i]=(empty&&ch===0)?1:0}
+  if(!toBase&&ch>0)energy[i]=v.cap_kwh;freeAt[i]=end;
+  if(smart){dropEnd[i]=start+dur-retH;retEnd[i]=start+dur;retE[i]=(empty&&!toBase)?v.power_wh_km*d/1000:0;canRe[i]=(empty&&ch===0&&!toBase)?1:0}
  }
  return {arr,waits,pr,done,chg,vsegs,pax};
 }
@@ -379,14 +393,15 @@ function dayStats(parts,vehH){
 function runDay(cfg,rep,disp){
  const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,kfb=cfg.paths?(cfg.pathFactor||(MAPD&&MAPD.bike_factor&&MAPD.bike_factor.mean)||1):0,sh=shares(sv,cfg.ns,bv,cfg.nb,rush,kfb),shB={};for(const k in sh)shB[k]=1-sh[k];
  const rnd=rng32(1000+rep),gr=disp?rng32(777+rep):null,parts=[],types=[];let vehH=0;
- [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart,kfb));types.push([v,n,k]);vehH+=n*24});
+ const bs={on:!!cfg.base&&!!(MAPD&&MAPD.base),thr:cfg.chargeBelow!=null?cfg.chargeBelow:C.CHARGE_BELOW,seed:5000+rep};
+ [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart,kfb,bs));types.push([v,n,k]);vehH+=n*24});
  const stats=dayStats(parts,vehH);
  if(!disp)return stats;
  const fleets=[],veh=[],allpax=[];let off=0;
  parts.forEach((p,ti)=>{const [v,n,k]=types[ti];fleets.push({kind:k,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(paxPerTrip(v.pax)*100)/100});
   for(let i=0;i<n;i++)veh.push([ti,p.vsegs[i].length?p.vsegs[i][0][3][0]:0,p.vsegs[i]]);p.pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n});
  allpax.sort((a,b)=>a[0]-b[0]);
- return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard',paths:!!cfg.paths}};
+ return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard',paths:!!cfg.paths,base:bs.on,charge_below:bs.thr},base:bs.on?{node:MAPD.base.node,x:MAPD.base.x,y:MAPD.base.y,name:MAPD.base.name}:null};
 }
 /* 200 days (no display), then the typical and worst days with the display log */
 function runCustom(cfg,reps,onProgress){
@@ -452,7 +467,7 @@ const NAMES=['1 Reference mixed','2 Small shuttles only','3 Two-seat shuttles on
 const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet'];
 const ST_NAMES=['Idle','Driving to passenger','Boarding','Carrying passengers','Dropping off','Driving empty','Charging'];
 let MAP,IDX,RUN=null,CACHE={},view={cx:0,cy:0,k:1,fit:1},W=0,H=0,DPR=1,time=8,playing=false,lastTs=0,speed=6;
-const sel={arch:0,scn:'normal',run:'typical',disp:'std',paths:'off'};
+const sel={arch:0,scn:'normal',run:'typical',disp:'std',paths:'off',base:'off',thr:20};
 let showB=true,showR=true,tokens={};
 const cvs=$('map'),ctx=cvs.getContext('2d');
 let statLayer=document.createElement('canvas'),statDirty=true;
@@ -478,7 +493,7 @@ function loadSaved(){try{return JSON.parse(localStorage.getItem('fleet-state')||
 function applySavedControls(o){if(!o)return;
   Object.assign(sel,o.sel||{});
   const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
-  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');mark('segPaths',sel.paths||'off');
+  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');mark('segPaths',sel.paths||'off');mark('segBase',sel.base||'off');if(!sel.thr)sel.thr=20;$('thr').value=sel.thr;$('thrVal').textContent=sel.thr+'%';
   KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e&&o.ids&&o.ids[i]!=null)e.value=o.ids[i]});
   if($('speed'))speed=+$('speed').value||speed}
 window.addEventListener('pagehide',saveState);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
@@ -501,19 +516,25 @@ function buildSeg(){
   $('segScn').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.scn=b.dataset.v;pressed($('segScn'),b);loadRun()});
   $('segDisp').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.disp=b.dataset.v;pressed($('segDisp'),b);loadRun()});
   $('segPaths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.paths=b.dataset.v;pressed($('segPaths'),b);statDirty=true;loadRun()});
+  $('segBase').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.base=b.dataset.v;pressed($('segBase'),b);statDirty=true;loadRun()});
+  $('thr').addEventListener('input',()=>{$('thrVal').textContent=$('thr').value+'%'});
+  $('thr').addEventListener('change',()=>{sel.thr=+$('thr').value;loadRun()});
   $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
 }
 function pressed(box,btn){[...box.children].forEach(c=>c.setAttribute('aria-pressed',c===btn))}
 function buildLegend(){
   const sw=(c,shape)=>shape==='bike'?`<svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="${c}"/></svg>`:`<svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="${c}"/></svg>`;
-  $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span><span id="lgPaths" hidden><svg width="18" height="12"><line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink-2)" stroke-width="1.6" stroke-dasharray="4 3"/></svg>campus footpath (bikes only)</span>`;
+  $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span><span id="lgBase" hidden><svg width="14" height="14"><rect x="1" y="1" width="12" height="12" rx="3" fill="var(--charge)"/></svg>charging base</span><span id="lgPaths" hidden><svg width="18" height="12"><line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink-2)" stroke-width="1.6" stroke-dasharray="4 3"/></svg>campus footpath (bikes only)</span>`;
 }
 function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?'_paths':'');
   const find=k=>(IDX[k]||[]).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);return find(key)||find('cases'+(sel.disp==='smart'?'_smart':''))||find('cases')}
+function needsLive(){return sel.base==='on'||sel.thr!==20}
+function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
 async function loadRun(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
   if(sel.run==='model'){return loadModelPreset()}
+  if(needsLive())return loadCustom(archCfg());
   const c=caseFor();
   const r=c.runs.find(r=>r.label===sel.run);
   $('loading').hidden=false;$('loading').textContent='Loading '+SHORT[sel.arch]+'…';
@@ -539,7 +560,7 @@ function buildBuilder(){
 function setBuilder(sh,ns,bk,nb){['s_ch','s_ba','s_cg','s_mo','s_au'].forEach((id,i)=>$(id).value=sh[i]);['b_fr','b_ba','b_cg','b_mo'].forEach((id,i)=>$(id).value=bk[i]);$('ns').value=ns;$('nb').value=nb;sumBuilder()}
 function readCfg(){
   const ns=Math.max(0,Math.min(80,Math.floor(+$('ns').value||0))),nb=Math.max(0,Math.min(150,Math.floor(+$('nb').value||0)));
-  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1};
+  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100};
 }
 function sumBuilder(){
   const c=readCfg(),F=FleetSim,parts=[];let cost=0;
@@ -547,8 +568,8 @@ function sumBuilder(){
   if(c.nb>0){const v=F.bikeVehicle(...c.bike);cost+=c.nb*v.cost;parts.push(`Bike: <b>${(v.cost/1000).toFixed(1)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
   $('bsum').innerHTML=(parts.join('<br>')||'Add at least one vehicle.')+(cost?`<br>Fleet cost <b>$${cost.toLocaleString('en-US')}</b>`:'');
 }
-async function loadCustom(){
-  $('builder').hidden=false;const cfg=readCfg();sumBuilder();
+async function loadCustom(over){
+  const cfg=over||readCfg();if(over)$('builder').hidden=true;else{$('builder').hidden=false;sumBuilder()}
   if(cfg.ns+cfg.nb<1){return}
   playing=false;$('play').textContent='Play';
   $('loading').hidden=false;$('loading').textContent='Simulating 200 days…';
@@ -558,7 +579,7 @@ async function loadCustom(){
   d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
   RUN=d;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+(cfg.paths&&cfg.nb>0?', bikes on campus paths':'')+', your fleet';
+  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+(cfg.paths&&cfg.nb>0?', bikes on campus paths':'')+(cfg.base?', charging at the base below '+Math.round(cfg.chargeBelow*100)+'%':(Math.round(cfg.chargeBelow*100)!==20?', charging where it stands below '+Math.round(cfg.chargeBelow*100)+'%':''))+(over?', simulated live in your browser':', your fleet');
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 
@@ -670,6 +691,10 @@ function drawStatic(){
   const placed=[];MAP.landmarks.forEach(l=>{const x=sx(l[1]),y=sy(l[2]);g.fillStyle=tokens['--map-ring'];g.beginPath();g.arc(x,y,3.5,0,7);g.fill();
     const tw=g.measureText(l[0]).width,bx={x:x+7,y:y-7,w:tw,h:14};if(placed.some(p=>p.x<bx.x+bx.w&&bx.x<p.x+p.w&&p.y<bx.y+bx.h&&bx.y<p.y+p.h))return;placed.push(bx);
     g.lineWidth=3.5;g.strokeStyle=tokens['--map-ground'];g.strokeText(l[0],x+7,y);g.fillStyle=tokens['--map-label'];g.fillText(l[0],x+7,y)});
+  {const lg=document.getElementById('lgBase');if(lg)lg.hidden=!(RUN&&RUN.base)}
+  if(RUN&&RUN.base){const b=RUN.base,x=sx(b.x),y=sy(b.y),z=11;roundRect(g,x-z,y-z,2*z,2*z,5);g.fillStyle=tokens['--charge'];g.fill();g.lineWidth=2;g.strokeStyle=isDark()?'#0C1015':'#fff';g.stroke();
+    g.fillStyle='#fff';g.font='700 13px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('\u26A1',x,y+.5);
+    g.font='700 11px '+getComputedStyle(document.body).getPropertyValue('--f-head');g.textAlign='left';const lab='Charging base ('+b.name.replace(' base','')+')';g.lineWidth=3.5;g.strokeStyle=tokens['--map-ground'];g.strokeText(lab,x+z+5,y);g.fillStyle=tokens['--map-label'];g.fillText(lab,x+z+5,y);g.textAlign='start'}
   statDirty=false;
 }
 function waitColor(m){return m>5?tokens['--wait-bad']:m>2?tokens['--wait-mid']:tokens['--wait-ok']}
@@ -760,7 +785,7 @@ function evText(e){const d=RUN,p=e[1]==='chg'?null:d.pax[e[2]];
   if(e[1]==='req')return [e[0],'Request: party of '+p[1]+' (vehicle '+d.vnames[p[6]]+' assigned)',''];
   if(e[1]==='pick')return [e[0],d.vnames[p[6]]+' picks up '+p[1]+' after '+p[7].toFixed(1)+' min',p[7]>5?'bad':''];
   if(e[1]==='drop')return [e[0],d.vnames[p[6]]+' drops off '+p[1],''];
-  return [e[0],d.vnames[e[2]]+' goes to charge at '+Math.round(e[3]*100)+'% battery','chg'];}
+  return [e[0],d.vnames[e[2]]+(d.base?' charges at the base, arrived with ':' goes to charge at ')+Math.round(e[3]*100)+'% battery','chg'];}
 function updateTicker(){
   const d=RUN;let lo=0,hi=d.events.length-1,r=-1;while(lo<=hi){const m=(lo+hi)>>1;if(d.events[m][0]<=time){r=m;lo=m+1}else hi=m-1}
   const ul=$('ticker');
