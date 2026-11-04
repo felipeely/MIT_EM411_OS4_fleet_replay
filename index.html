@@ -34,6 +34,7 @@ h1,h2,h3{font-family:var(--f-head);margin:0;font-weight:600;letter-spacing:.01em
 .title h1{font-size:26px;line-height:1.1}
 .title p{margin:3px 0 0;color:var(--ink-2);font-size:13px;max-width:62ch}
 .ctrls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end}
+.grp.dis{opacity:.38;pointer-events:none}
 .grp{display:flex;flex-direction:column;gap:4px;min-width:0}
 .grp>label,.lbl{font-family:var(--f-head);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
@@ -194,7 +195,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <div class="hud">
         <div class="clock" id="clock">08:00<small id="ampm"></small></div>
         <div class="chip traffic" id="trafficChip" hidden><i></i><span id="trafficTxt"></span></div>
-        <div class="chip modelchip" id="modelChip" hidden><i></i><span>Model day: even arrivals, every ride 1.1 km, only floor(n x availability) vehicles in service (the others sit out), no batteries</span></div>
+        <div class="chip modelchip" id="modelChip" hidden><i></i><span>Model day: even arrivals, every ride 1.1 km, only floor(n x availability) vehicles in service (the others sit out), no batteries. Dispatch, bike routes and charging are greyed out because the model does not use them.</span></div>
         <div class="demand" id="blockChip"><div class="dl">Demand <span id="dWin"></span></div><div class="dn"><b id="dNum">50</b><span>people per hour</span><em id="dLvl">Low</em></div><div class="dm" id="dMeter"><i></i><i></i><i></i><i></i><i></i></div></div>
       </div>
       <div class="maptools">
@@ -585,7 +586,9 @@ function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.path
   const find=k=>(IDX[k]||[]).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);return find(key)||find('cases'+(sel.disp==='smart'?'_smart':''))||find('cases')}
 function needsLive(){return sel.base==='on'||sel.thr!==20}
 function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
+function lockForModel(){const m=sel.run==='model'&&sel.arch!==5;[['segDisp'],['segPaths'],['segBase'],['thr']].forEach(([id])=>{const g=$(id).closest('.grp');g.classList.toggle('dis',m);g.querySelectorAll('button,input').forEach(e=>e.disabled=m);if(m)g.title='Not used by the model day, which has no batteries and ignores dispatch and bike routes.';else g.removeAttribute('title')})}
 async function loadRun(){
+  lockForModel();
   try{await loadRun_()}catch(err){console.error(err);$('loading').hidden=false;$('loading').textContent='Something went wrong ('+err.message+'). Showing the typical day instead.';
     if(sel.run==='model'||needsLive()){sel.run='typical';sel.base='off';sel.thr=20;try{const m=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};m('segRun','typical');m('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';await loadRun_()}catch(e2){console.error(e2)}}}}
 async function loadRun_(){

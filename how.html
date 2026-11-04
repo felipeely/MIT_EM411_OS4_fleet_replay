@@ -28,7 +28,7 @@ td{border-top:1px solid var(--line);padding:6px 10px 6px 0;color:var(--ink-2);ve
 </style></head><body><div class="wrap">
 <a class="back" href="index.html">&larr; Back to the replay</a>
 <h1>How the numbers are calculated</h1>
-<p>Two programs share the same vehicle data. On the replay page, <b>Model day</b> shows the model's own view of one day: requests arrive evenly, every ride is the average 1.1 km, only the vehicles the availability rounds down to are in service and batteries are not tracked.</p><p> <b>model.py</b> is the fast model that scores millions of fleets with simple formulas. <b>sim_day.py</b> plays one day request by request, 200 times, to check the model. The replay page shows the simulation. Every formula below is taken from the code.</p>
+<p>Two programs share the same vehicle data. On the replay page, <b>Model day</b> shows the model's own view of one day: requests arrive evenly, every ride is the average 1.1 km, only the vehicles the availability rounds down to are in service and batteries are not tracked. Because of that, the Dispatch, Bikes and Charging controls (and the charge level) are greyed out while Model day is selected: the model does not use them.</p><p> <b>model.py</b> is the fast model that scores millions of fleets with simple formulas. <b>sim_day.py</b> plays one day request by request, 200 times, to check the model. The replay page shows the simulation. Every formula below is taken from the code.</p>
 
 <h2>1. One vehicle</h2>
 <div class="card">
