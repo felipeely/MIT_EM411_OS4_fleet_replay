@@ -175,7 +175,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
       <p>One simulated weekday of the autonomous shuttle and e-bike fleet, replayed on the streets of our MIT and Kendall service area. Timing, queues, batteries and waits are the simulation's own.</p>
     </div>
     <div class="ctrls">
-      <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
+      <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="resetBtn" title="Back to the reference architecture with the model's own options">Reset</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
       <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
       <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
@@ -570,6 +570,9 @@ function buildSeg(){
   $('segPaths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.paths=b.dataset.v;pressed($('segPaths'),b);statDirty=true;loadRun()});
   $('segBase').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.base=b.dataset.v;pressed($('segBase'),b);statDirty=true;loadRun()});
   $('thr').addEventListener('input',()=>{$('thrVal').textContent=$('thr').value+'%'});
+  $('resetBtn').addEventListener('click',()=>{Object.assign(sel,{arch:0,scn:'normal',run:'typical',disp:'std',paths:'off',base:'off',thr:20});
+    const mk=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
+    mk('segArch',0);mk('segScn','normal');mk('segRun','typical');mk('segDisp','std');mk('segPaths','off');mk('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';statDirty=true;loadRun()});
   $('thr').addEventListener('change',()=>{sel.thr=+$('thr').value;loadRun()});
   $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
 }
