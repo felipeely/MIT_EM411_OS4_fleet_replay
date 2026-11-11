@@ -178,7 +178,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
     <div class="ctrls">
       <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="resetBtn" title="Back to the reference architecture with the model's own options">Reset</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
       <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
-      <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button></div></div>
+      <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button><button data-v="storm" aria-pressed="false">Nor'easter storm</button></div></div>
       <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
       <div class="grp"><label title="Where bikes may ride">Bikes</label><div class="seg" id="segPaths" role="group" aria-label="Bike routes"><button data-v="off" aria-pressed="true" title="Bikes ride on the streets only, like the shuttles">Streets only</button><button data-v="on" aria-pressed="false" title="Bikes can also cut through campus on footpaths, courtyards and crosswalks (City of Cambridge GIS data)">Campus paths</button></div></div>
       <div class="grp"><label title="Where a vehicle charges">Charging</label><div class="seg" id="segBase" role="group" aria-label="Where vehicles charge"><button data-v="off" aria-pressed="true" title="Original rule: a vehicle charges where it stands (not realistic)">Where it stands</button><button data-v="on" aria-pressed="false" title="A low vehicle drives to the charging base at the Volpe site, charges there and drives back into service">At the base</button></div></div>
@@ -196,6 +196,7 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
         <div class="clock" id="clock">08:00<small id="ampm"></small></div>
         <div class="chip traffic" id="trafficChip" hidden><i></i><span id="trafficTxt"></span></div>
         <div class="chip modelchip" id="modelChip" hidden><i></i><span>Model day: even arrivals, every ride 1.1 km, only floor(n x availability) vehicles in service (the others sit out), no batteries. Dispatch, bike routes and charging are greyed out because the model does not use them.</span></div>
+        <div class="chip modelchip" id="stormChip" hidden><i></i><span>Nor'easter storm (Task 4): roads 20 km/h, bikes 8 km/h, range x0.6 shuttles and x0.7 bikes, demand unchanged. Simulated live in your browser.</span></div>
         <div class="demand" id="blockChip"><div class="dl">Demand <span id="dWin"></span></div><div class="dn"><b id="dNum">50</b><span>people per hour</span><em id="dLvl">Low</em></div><div class="dm" id="dMeter"><i></i><i></i><i></i><i></i><i></i></div></div>
       </div>
       <div class="maptools">
@@ -318,7 +319,7 @@ const C={
  PARTY:[[1,.60],[2,.20],[3,.10],[4,.05],[5,.03],[6,.02]],
  DEMAND:{0:15,2:5,4:15,6:50,8:150,10:150,12:150,14:100,16:75,18:100,20:50,22:35},
  BLOCK_H:2, PAX_KG:100, DWELL_S:60, CHARGE_OVERHEAD_H:.25, EMPTY_SHARE:.5, DETOUR:1.3, AREA:3.5,
- TAPER_FAST:.8, TAPER_SLOW:.3, CRR:.005, RHO:1.2, CDA:.5, EFF:.8, G:9.81, LIMIT_ROAD:32.2, LIMIT_BIKE:20,
+ TAPER_FAST:.8, TAPER_SLOW:.3, CRR:.005, RHO:1.2, CDA:.5, EFF:.8, G:9.81, LIMIT_ROAD:32.2, LIMIT_BIKE:20, STORM:{limit_road:20,limit_bike:8,range_road:.6,range_bike:.7},
  TRAFFIC:{blocks:[8,10,12,14,18],road:.58,bike:.85}, TRIP_KM:1.1, LONGEST_KM:2.1, RIDE:[.2,2.0], CHARGE_BELOW:.2, MAX_WAIT:30,
  REQ:{wait:5,ride:7,volume:1500,peak:150,offpeak:50}
 };
@@ -326,16 +327,17 @@ const PAXMEAN=C.PARTY.reduce((s,p)=>s+p[0]*p[1],0);
 function paxPerTrip(seats){let veh=0;C.PARTY.forEach(p=>veh+=Math.ceil(p[0]/seats)*p[1]);return PAXMEAN/veh}
 function physicsSpeed(motorKw,mass){const pw=C.EFF*motorKw*1000;let lo=0,hi=60;for(let i=0;i<80;i++){const mid=.5*(lo+hi),need=C.CRR*mass*C.G*mid+.5*C.RHO*C.CDA*mid**3;if(need>pw)hi=mid;else lo=mid}return lo*3.6}
 function finish(v){const taper=C.TAPER_FAST+(1-C.TAPER_FAST)/C.TAPER_SLOW;v.charge_h=v.cap_kwh/v.charger_kw*taper;v.uptime_h=v.range_km/v.speed;v.downtime_h=v.charge_h+C.CHARGE_OVERHEAD_H;v.avail=v.uptime_h/(v.uptime_h+v.downtime_h);return v}
-function roadVehicle(ch,ba,cg,mo,au){
+function wx(cfg){return cfg&&cfg.storm?C.STORM:undefined}
+function roadVehicle(ch,ba,cg,mo,au,W){
  const [pax,wch,cch,pnom]=C.R_CHAS[ch],[cap,cb,wb]=C.R_BATT[ba],[kwg,cgc,wg]=C.R_CHG[cg],[wm,kwm,cm]=C.R_MOT[mo],[wa,pa,ca]=C.R_AUT[au];
- const cost=(cch+cb+cgc+ca)*1000+cm,weight=wch+wb+wg+wm+wa+pax*C.PAX_KG,power=pnom+.1*(weight-wch)+pa,range=cap*1000/power,wEmpty=weight-pax*C.PAX_KG;
- const speed=Math.min(700*kwm/weight,C.LIMIT_ROAD),speedEmpty=Math.min(700*kwm/wEmpty,C.LIMIT_ROAD);
+ const cost=(cch+cb+cgc+ca)*1000+cm,weight=wch+wb+wg+wm+wa+pax*C.PAX_KG,power=pnom+.1*(weight-wch)+pa,range=cap*1000*(W?W.range_road:1)/power,wEmpty=weight-pax*C.PAX_KG,LR=W?W.limit_road:C.LIMIT_ROAD;
+ const speed=Math.min(700*kwm/weight,LR),speedEmpty=Math.min(700*kwm/wEmpty,LR);
  return finish({kind:'road',pax,cost,weight,power_wh_km:power,range_km:range,speed,speed_empty:speedEmpty,cap_kwh:cap,charger_kw:kwg,label:'Shuttle',spec:[ch,ba,cg,mo,au].join('/')});
 }
-function bikeVehicle(fr,ba,cg,mo){
+function bikeVehicle(fr,ba,cg,mo,W){
  const [pax,wf,cf,pnom]=C.B_FRAME[fr],[cap,cb,wb]=C.B_BATT[ba],[kwg,cgc,wg]=C.B_CHG[cg],[wm,kwm,cm]=C.B_MOT[mo];
- const cost=(cf+cb+cgc)*1000+cm,weight=wf+wb+wg+wm+pax*C.PAX_KG,power=pnom,range=cap*1000/power,wEmpty=weight-pax*C.PAX_KG;
- const speed=Math.min(physicsSpeed(kwm,weight),C.LIMIT_BIKE),speedEmpty=Math.min(physicsSpeed(kwm,wEmpty),C.LIMIT_BIKE);
+ const cost=(cf+cb+cgc)*1000+cm,weight=wf+wb+wg+wm+pax*C.PAX_KG,power=pnom,range=cap*1000*(W?W.range_bike:1)/power,wEmpty=weight-pax*C.PAX_KG,LB=W?W.limit_bike:C.LIMIT_BIKE;
+ const speed=Math.min(physicsSpeed(kwm,weight),LB),speedEmpty=Math.min(physicsSpeed(kwm,wEmpty),LB);
  return finish({kind:'bike',pax,cost,weight,power_wh_km:power,range_km:range,speed,speed_empty:speedEmpty,cap_kwh:cap,charger_kw:kwg,label:'Bike',spec:[fr,ba,cg,mo].join('/')});
 }
 const cycleH=(v,d,f)=>d/(v.speed*f)+C.EMPTY_SHARE*d/(v.speed_empty*f)+2*C.DWELL_S/3600;
@@ -443,7 +445,7 @@ function dayStats(parts,vehH){
  return {volume:vol,avg_wait:sp>0?sw/sp*60:0,peak_wait:peak,over5:A.length?over/A.length*100:0,avail:1-chg/vehH,requests:A.length,people:sp};
 }
 function runDay(cfg,rep,disp){
- const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,kfb=cfg.paths?(cfg.pathFactor||(MAPD&&MAPD.bike_factor&&MAPD.bike_factor.mean)||1):0,sh=shares(sv,cfg.ns,bv,cfg.nb,rush,kfb),shB={};for(const k in sh)shB[k]=1-sh[k];
+ const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle,wx(cfg)):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike,wx(cfg)):null,kfb=cfg.paths?(cfg.pathFactor||(MAPD&&MAPD.bike_factor&&MAPD.bike_factor.mean)||1):0,sh=shares(sv,cfg.ns,bv,cfg.nb,rush,kfb),shB={};for(const k in sh)shB[k]=1-sh[k];
  const rnd=rng32(1000+rep),gr=disp?rng32(777+rep):null,parts=[],types=[];let vehH=0;
  const bs={on:!!cfg.base&&!!(MAPD&&MAPD.base),thr:cfg.chargeBelow!=null?cfg.chargeBelow:C.CHARGE_BELOW,seed:5000+rep};
  [[sv,cfg.ns,sh,'road'],[bv,cfg.nb,shB,'bike']].forEach(([v,n,s,k])=>{if(!v||n<=0)return;parts.push(simType(v,n,s,rnd,k,rush,disp?{gr}:null,!!cfg.smart,kfb,bs));types.push([v,n,k]);vehH+=n*24});
@@ -453,7 +455,7 @@ function runDay(cfg,rep,disp){
  parts.forEach((p,ti)=>{const [v,n,k]=types[ti];fleets.push({kind:k,label:v.label,spec:v.spec,n,seats:v.pax,cap_kwh:v.cap_kwh,speed:Math.round(v.speed*10)/10,speed_empty:Math.round(v.speed_empty*10)/10,charge_h:Math.round(v.charge_h*1000)/1000,pax_per_trip:Math.round(paxPerTrip(v.pax)*100)/100});
   for(let i=0;i<n;i++)veh.push([ti,p.vsegs[i].length?p.vsegs[i][0][3][0]:0,p.vsegs[i]]);p.pax.forEach(q=>{q[6]+=off;allpax.push(q)});off+=n});
  allpax.sort((a,b)=>a[0]-b[0]);
- return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard',paths:!!cfg.paths,base:bs.on,charge_below:bs.thr},base:bs.on?{node:MAPD.base.node,x:MAPD.base.x,y:MAPD.base.y,name:MAPD.base.name}:null};
+ return {fleets,veh,pax:allpax,summary:stats,traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Custom fleet',scenario:cfg.storm?'storm':rush?'rush':'normal',rep,dispatch:cfg.smart?'smart':'standard',paths:!!cfg.paths,base:bs.on,charge_below:bs.thr},base:bs.on?{node:MAPD.base.node,x:MAPD.base.x,y:MAPD.base.y,name:MAPD.base.name}:null};
 }
 /* 200 days (no display), then the typical and worst days with the display log */
 function runCustom(cfg,reps,onProgress){
@@ -463,11 +465,11 @@ function runCustom(cfg,reps,onProgress){
  let typ=0,bd=Infinity,worst=0;peaks.forEach((p,i)=>{const d=Math.abs(p-med);if(d<bd){bd=d;typ=i}if(p>peaks[worst])worst=i});
  return {avg200:agg,reps:{typical:typ,worst},peaks};
 }
-function modelFor(cfg){const sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null;return modelEval(sv,cfg.ns,bv,cfg.nb,!!cfg.rush)}
+function modelFor(cfg){const sv=cfg.ns>0?roadVehicle(...cfg.shuttle,wx(cfg)):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike,wx(cfg)):null;return modelEval(sv,cfg.ns,bv,cfg.nb,!!cfg.rush)}
 
 /* ---------- the model's own day: even arrivals, average trips, only floor(n x availability) vehicles in service, no batteries ---------- */
 function runModelDay(cfg){
- const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike):null,gr=rng32(4242);
+ const rush=!!cfg.rush,sv=cfg.ns>0?roadVehicle(...cfg.shuttle,wx(cfg)):null,bv=cfg.nb>0?bikeVehicle(...cfg.bike,wx(cfg)):null,gr=rng32(4242);
  const halves=[[sv,cfg.ns,'road'],[bv,cfg.nb,'bike']].filter(h=>h[0]&&h[1]>0);
  const GB=false,R=x=>Math.round(x*1e4)/1e4,R3=x=>Math.round(x*1e3)/1e3,DW=C.DWELL_S/3600;   // the model day uses the street graph
  const capOf=(v,n,f)=>capacityPax(v,n,f);
@@ -506,7 +508,7 @@ function runModelDay(cfg){
  allpax.forEach(p=>{if(p[8])vol+=p[1];sw+=p[7]*p[1];sp+=p[1];if(p[7]>5)over++;const b=Math.floor(p[0]/2);bn[b]+=p[7]*p[1];bd[b]+=p[1]});
  let peak=0;for(let b=0;b<12;b++)if(bd[b]>0)peak=Math.max(peak,bn[b]/bd[b]);
  const mod=modelFor(cfg);
- return {fleets,veh,pax:allpax,summary:{volume:vol,avg_wait:sp>0?sw/sp:0,peak_wait:peak,over5:allpax.length?over/allpax.length*100:0,avail:mod.avail,requests:allpax.length,people:sp},traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Model day',scenario:rush?'rush':'normal',rep:0},modelDay:true};
+ return {fleets,veh,pax:allpax,summary:{volume:vol,avg_wait:sp>0?sw/sp:0,peak_wait:peak,over5:allpax.length?over/allpax.length*100:0,avail:mod.avail,requests:allpax.length,people:sp},traffic:rush?{blocks:C.TRAFFIC.blocks.slice(),road:C.TRAFFIC.road,bike:C.TRAFFIC.bike}:null,meta:{arch:'Model day',scenario:cfg.storm?'storm':rush?'rush':'normal',rep:0},modelDay:true};
 }
 root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,runModelDay,setMap};
 })(typeof window!=='undefined'?window:globalThis);
@@ -584,13 +586,13 @@ function buildLegend(){
 }
 function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?'_paths':'');
   const find=k=>(IDX[k]||[]).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);return find(key)||find('cases'+(sel.disp==='smart'?'_smart':''))||find('cases')}
-function needsLive(){return sel.base==='on'||sel.thr!==20}
-function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
+function needsLive(){return sel.base==='on'||sel.thr!==20||sel.scn==='storm'}
+function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
 function lockForModel(){const m=sel.run==='model'&&sel.arch!==5;[['segDisp'],['segPaths'],['segBase'],['thr']].forEach(([id])=>{const g=$(id).closest('.grp');g.classList.toggle('dis',m);g.querySelectorAll('button,input').forEach(e=>e.disabled=m);if(m)g.title='Not used by the model day, which has no batteries and ignores dispatch and bike routes.';else g.removeAttribute('title')})}
 async function loadRun(){
   lockForModel();
   try{await loadRun_()}catch(err){console.error(err);$('loading').hidden=false;$('loading').textContent='Something went wrong ('+err.message+'). Showing the typical day instead.';
-    if(sel.run==='model'||needsLive()){sel.run='typical';sel.base='off';sel.thr=20;try{const m=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};m('segRun','typical');m('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';await loadRun_()}catch(e2){console.error(e2)}}}}
+    if(sel.run==='model'||needsLive()){sel.run='typical';sel.base='off';sel.thr=20;sel.scn='normal';try{const m=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};m('segScn','normal');m('segRun','typical');m('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';await loadRun_()}catch(e2){console.error(e2)}}}}
 async function loadRun_(){
   if(sel.arch===5){return loadCustom()}
   $('builder').hidden=true;
@@ -621,12 +623,12 @@ function buildBuilder(){
 function setBuilder(sh,ns,bk,nb){['s_ch','s_ba','s_cg','s_mo','s_au'].forEach((id,i)=>$(id).value=sh[i]);['b_fr','b_ba','b_cg','b_mo'].forEach((id,i)=>$(id).value=bk[i]);$('ns').value=ns;$('nb').value=nb;sumBuilder()}
 function readCfg(){
   const ns=Math.max(0,Math.min(80,Math.floor(+$('ns').value||0))),nb=Math.max(0,Math.min(150,Math.floor(+$('nb').value||0)));
-  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100};
+  return {shuttle:['s_ch','s_ba','s_cg','s_mo','s_au'].map(i=>$(i).value),ns,bike:['b_fr','b_ba','b_cg','b_mo'].map(i=>$(i).value),nb,rush:sel.scn==='rush',storm:sel.scn==='storm',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100};
 }
 function sumBuilder(){
   const c=readCfg(),F=FleetSim,parts=[];let cost=0;
-  if(c.ns>0){const v=F.roadVehicle(...c.shuttle);cost+=c.ns*v.cost;parts.push(`Shuttle: <b>${Math.round(v.cost/1000)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h loaded, <b>${v.speed_empty.toFixed(1)}</b> empty, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
-  if(c.nb>0){const v=F.bikeVehicle(...c.bike);cost+=c.nb*v.cost;parts.push(`Bike: <b>${(v.cost/1000).toFixed(1)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
+  if(c.ns>0){const v=F.roadVehicle(...c.shuttle,c.storm?F.C.STORM:undefined);cost+=c.ns*v.cost;parts.push(`Shuttle: <b>${Math.round(v.cost/1000)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h loaded, <b>${v.speed_empty.toFixed(1)}</b> empty, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
+  if(c.nb>0){const v=F.bikeVehicle(...c.bike,c.storm?F.C.STORM:undefined);cost+=c.nb*v.cost;parts.push(`Bike: <b>${(v.cost/1000).toFixed(1)}k</b> dollars, <b>${v.speed.toFixed(1)}</b> km/h, range <b>${Math.round(v.range_km)}</b> km, charge <b>${v.charge_h.toFixed(1)}</b> h, availability <b>${v.avail.toFixed(2)}</b>`)}
   $('bsum').innerHTML=(parts.join('<br>')||'Add at least one vehicle.')+(cost?`<br>Fleet cost <b>$${cost.toLocaleString('en-US')}</b>`:'');
 }
 async function loadCustom(over){
@@ -640,19 +642,19 @@ async function loadCustom(over){
   d.caseInfo={custom:true,avg200:ent.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep,summary:d.summary};
   RUN=d;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d)+' · fleet cost $'+Math.round(d.caseInfo.mod.cost).toLocaleString('en-US');
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+(cfg.paths&&cfg.nb>0?', bikes on campus paths':'')+(cfg.base?', charging at the base below '+Math.round(cfg.chargeBelow*100)+'%':(Math.round(cfg.chargeBelow*100)!==20?', charging where it stands below '+Math.round(cfg.chargeBelow*100)+'%':''))+(over?', simulated live in your browser':', your fleet');
+  $('c1sub').textContent=(cfg.storm?"Nor'easter storm day (road 20 km/h, bikes 8 km/h, range x0.6 shuttles and x0.7 bikes, demand unchanged), ":cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+(isModel?'the model day (even arrivals, average trips, no batteries)':sel.run==='typical'?'a typical simulated day (#'+rep+')':'the worst of 200 simulated days (#'+rep+')')+(cfg.smart?', smart dispatch':'')+(cfg.paths&&cfg.nb>0?', bikes on campus paths':'')+(cfg.base?', charging at the base below '+Math.round(cfg.chargeBelow*100)+'%':(Math.round(cfg.chargeBelow*100)!==20?', charging where it stands below '+Math.round(cfg.chargeBelow*100)+'%':''))+(over?', simulated live in your browser':', your fleet');
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 
 async function loadModelPreset(){
-  const a=IDX.archs[sel.arch],cfg={shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush'};
+  const a=IDX.archs[sel.arch],cfg={shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm'};
   playing=false;$('play').textContent='Play';$('loading').hidden=false;$('loading').textContent='Building the model day…';
   await new Promise(r=>setTimeout(r,30));
   const key='P'+JSON.stringify(cfg);let d=CACHE[key];if(!d){d=FleetSim.runModelDay(cfg);prep(d);CACHE[key]=d}
-  const c=caseFor();
-  d.caseInfo={custom:true,avg200:c.avg200,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep:0,summary:d.summary};
+  const c=sel.scn==='storm'?null:caseFor(),sk='S'+JSON.stringify(cfg),av=c?c.avg200:(CCACHE[sk]||(CCACHE[sk]=FleetSim.runCustom(cfg,200))).avg200;
+  d.caseInfo={custom:true,avg200:av,mod:FleetSim.modelFor(cfg),cfg};d.runInfo={rep:0,summary:d.summary};
   RUN=d;$('loading').hidden=true;$('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
-  $('c1sub').textContent=(cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+'the model day (even arrivals, average trips, no batteries)';
+  $('c1sub').textContent=(cfg.storm?"Nor'easter storm day (road 20 km/h, bikes 8 km/h, range x0.6 shuttles and x0.7 bikes, demand unchanged), ":cfg.rush?'rush-hour traffic day, ':'normal weekday, ')+'the model day (even arrivals, average trips, no batteries)';
   buildStates();buildCmp();buildEvents();statDirty=true;drawAll();updatePanel(true);
 }
 const plural=(n,w)=>n+' '+w+(n===1?'':'s');
@@ -869,7 +871,7 @@ function drawTradespace(U,A,D){
     const lab='Selected: MAU '+A.t.toFixed(3)+', $'+(cost<1?cost.toFixed(2):cost.toFixed(2))+'M',tw=g.measureText(lab).width+12;let lx=X(cost)+12,ly=Y(A.t)+22;if(lx+tw>w-4)lx=X(cost)-tw-12;if(ly>Tp+ph-12)ly=Y(A.t)-26;
     g.fillStyle=T['--panel'];g.strokeStyle=T['--accent'];g.lineWidth=1;g.beginPath();g.rect(lx,ly-10,tw,20);g.fill();g.stroke();g.fillStyle=T['--ink'];g.textAlign='left';g.textBaseline='middle';g.fillText(lab,lx+6,ly)}
   $('tssub').textContent='model MAU against fleet cost, all architectures the model explored';
-  $('tsnote').innerHTML='Grey and coloured dots are a sample of the '+TSD.pts.length.toLocaleString('en-US')+' architectures (of 289,120) on a <b>normal weekday</b>, equal numbers per fleet type. The frontiers use all of them. The filled dot is the selected fleet from the model'+(A&&D?' ('+A.t.toFixed(3)+')':'')+'. When the selected fleet is the reference architecture, the red diamond sits under the filled dot. The ring is the MAU of the simulated day on screen'+(D?' ('+D.t.toFixed(3)+')':'')+', at the same cost. '+(sel.scn==='rush'?'For the rush-hour day the dot uses the rush-hour model, but the cloud is still the normal weekday.':'');
+  $('tsnote').innerHTML='Grey and coloured dots are a sample of the '+TSD.pts.length.toLocaleString('en-US')+' architectures (of 289,120) on a <b>normal weekday</b>, equal numbers per fleet type. The frontiers use all of them. The filled dot is the selected fleet from the model'+(A&&D?' ('+A.t.toFixed(3)+')':'')+'. When the selected fleet is the reference architecture, the red diamond sits under the filled dot. The ring is the MAU of the simulated day on screen'+(D?' ('+D.t.toFixed(3)+')':'')+', at the same cost. '+(sel.scn==='rush'?'For the rush-hour day the dot uses the rush-hour model, but the cloud is still the normal weekday.':sel.scn==="storm"?'For the storm day the dot uses the storm model (slower roads, shorter range), but the cloud is still the normal weekday, so the dot can fall off the frontier it is drawn against.':'');
 }
 /* ---------- SAU / MAU (Task 1 curves, model.py Appendix A) ---------- */
 const SAUP={volume:[[0,0],[500,.2],[1000,.4],[1500,.8],[2000,1]],peak:[[0,0],[50,.2],[100,.5],[150,.9],[200,1]],wait:[[0,1],[5,.95],[10,.75],[15,.4],[20,.2],[30,0]],avail:[[0,0],[1,1]]};
@@ -939,7 +941,7 @@ function updateTicker(){
   function render(){ul.innerHTML=shown.slice().reverse().map(k=>{const t=evText(d.events[k]);return `<li class="${t[2]}"><time>${fmt(t[0])}</time><span>${t[1]}</span></li>`}).join('')}
 }
 function updatePanel(force){
-  if(!RUN)return;const d=RUN;$('modelChip').hidden=!d.modelDay;
+  if(!RUN)return;const d=RUN;$('modelChip').hidden=!d.modelDay;{const ci=d.caseInfo;$('stormChip').hidden=!(ci&&ci.cfg&&ci.cfg.storm)}
   $('clock').firstChild.nodeValue=fmt(time);$('timeval').textContent=fmt(time);$('scrub').value=time;
   const blk=Math.floor(time/2)*2;const tr=d.traffic&&d.traffic.blocks.includes(blk);
   $('trafficChip').hidden=!(d.traffic&&tr);if(d.traffic&&tr)$('trafficTxt').textContent='Rush-hour traffic: shuttles at '+Math.round(d.traffic.road*100)+'%, bikes at '+Math.round(d.traffic.bike*100)+'% of normal speed';
