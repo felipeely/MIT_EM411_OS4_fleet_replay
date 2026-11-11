@@ -569,7 +569,7 @@ async function init(){
 }
 function buildSeg(){
   const box=$('segArch');
-  SHORT.forEach((n,i)=>{const b=document.createElement('button');b.textContent=SHORT[i];b.dataset.v=i;b.setAttribute('aria-pressed',i===0);box.appendChild(b)});
+  SHORT.slice(0,6).forEach((n,i)=>{const b=document.createElement('button');b.textContent=SHORT[i];b.dataset.v=i;b.setAttribute('aria-pressed',i===0);box.appendChild(b)});
   const t4=$('segT4');SHORT.slice(6).forEach((n,k)=>{const b=document.createElement('button');b.textContent=n;b.dataset.v=k+6;b.title=T4[k].t;b.setAttribute('aria-pressed','false');t4.appendChild(b)});
   const pickArch=e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);pressed(t4,b);loadRun()};
   box.addEventListener('click',pickArch);t4.addEventListener('click',pickArch);
