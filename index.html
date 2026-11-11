@@ -177,7 +177,8 @@ td.bad{color:var(--bad);font-weight:600} td.good{color:var(--good);font-weight:6
     </div>
     <div class="ctrls">
       <div class="grp"><label>Page</label><div class="seg"><button aria-pressed="true">Replay</button><button onclick="location.href='how.html'">How it works</button><button id="resetBtn" title="Back to the reference architecture with the model's own options">Reset</button><button id="themeBtn" aria-label="Switch light or dark">Dark</button></div></div>
-      <div class="grp"><label>Architecture</label><div class="seg" id="segArch" role="group" aria-label="Architecture"></div></div>
+      <div class="grp"><label>Task 2 architectures</label><div class="seg" id="segArch" role="group" aria-label="Task 2 architectures"></div></div>
+      <div class="grp"><label title="The fleets from Task 4. Reference is the same as Task 2 architecture 1. They always run live in your browser.">Task 4 architectures</label><div class="seg" id="segT4" role="group" aria-label="Task 4 architectures"></div></div>
       <div class="grp"><label>Day</label><div class="seg" id="segScn" role="group" aria-label="Day type"><button data-v="normal" aria-pressed="true">Normal weekday</button><button data-v="rush" aria-pressed="false">Rush-hour traffic</button><button data-v="storm" aria-pressed="false">Nor'easter storm</button></div></div>
       <div class="grp"><label title="How a free vehicle is chosen for a waiting passenger">Dispatch</label><div class="seg" id="segDisp" role="group" aria-label="Dispatch rule"><button data-v="std" aria-pressed="true" title="Original rule: a vehicle driving back empty cannot be reassigned until it arrives">Standard</button><button data-v="smart" aria-pressed="false" title="Smart dispatch: a vehicle driving back empty is sent straight to a waiting passenger">Smart</button></div></div>
       <div class="grp"><label title="Where bikes may ride">Bikes</label><div class="seg" id="segPaths" role="group" aria-label="Bike routes"><button data-v="off" aria-pressed="true" title="Bikes ride on the streets only, like the shuttles">Streets only</button><button data-v="on" aria-pressed="false" title="Bikes can also cut through campus on footpaths, courtyards and crosswalks (City of Cambridge GIS data)">Campus paths</button></div></div>
@@ -518,7 +519,9 @@ root.FleetSim={C,roadVehicle,bikeVehicle,paxPerTrip,modelFor,runDay,runCustom,ru
 'use strict';
 const $=id=>document.getElementById(id);
 const NAMES=['1 Reference mixed','2 Small shuttles only','3 Two-seat shuttles only','4 Bikes only','5 Mixed, fast motor'];
-const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet'];
+const SHORT=['1 Reference','2 Small shuttles','3 Two-seat','4 Bikes only','5 Mixed, fast','Custom fleet','Pareto 1','Pareto 2','Pareto 3','New recommended'];
+const T4=[{i:6,t:'Pareto 1 (50 bikes)',Shuttles:0,Bikes:50,'Bike spec':'B1/E1/G2/K1'},{i:7,t:'Pareto 2 (10 shuttles + 5 bikes)',Shuttles:10,'Shuttle spec':'C1/P2/G3/M2/A4',Bikes:5,'Bike spec':'B2/E1/G2/K1'},{i:8,t:'Pareto 3 (10 shuttles)',Shuttles:10,'Shuttle spec':'C2/P2/G3/M2/A4',Bikes:0},{i:9,t:'New recommended (14 shuttles)',Shuttles:14,'Shuttle spec':'C2/P2/G3/M2/A4',Bikes:0}];
+function ARC(i){return i>=6?T4[i-6]:IDX.archs[i]}
 const ST_NAMES=['Idle','Driving to passenger','Boarding','Carrying passengers','Dropping off','Driving empty','Charging'];
 let MAP,IDX,RUN=null,CACHE={},view={cx:0,cy:0,k:1,fit:1},W=0,H=0,DPR=1,time=8,playing=false,lastTs=0,speed=6;
 const sel={arch:0,scn:'normal',run:'typical',disp:'std',paths:'off',base:'off',thr:20};
@@ -547,8 +550,8 @@ function saveState(){try{const o={sel,time,ids:{}};KEEP_IDS.forEach(i=>{const e=
 function loadSaved(){try{return JSON.parse(localStorage.getItem('fleet-state')||'null')}catch(e){return null}}
 function applySavedControls(o){if(!o)return;
   Object.assign(sel,o.sel||{});
-  const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
-  mark('segArch',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');mark('segPaths',sel.paths||'off');mark('segBase',sel.base||'off');if(!sel.thr)sel.thr=20;$('thr').value=sel.thr;$('thrVal').textContent=sel.thr+'%';
+  const mark=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));pressed($(id),b||null)};
+  mark('segArch',sel.arch);mark('segT4',sel.arch);mark('segScn',sel.scn);mark('segRun',sel.run);mark('segDisp',sel.disp||'std');mark('segPaths',sel.paths||'off');mark('segBase',sel.base||'off');if(!sel.thr)sel.thr=20;$('thr').value=sel.thr;$('thrVal').textContent=sel.thr+'%';
   KEEP_IDS.forEach(i=>{const e=document.getElementById(i);if(e&&o.ids&&o.ids[i]!=null)e.value=o.ids[i]});
   if($('speed'))speed=+$('speed').value||speed}
 window.addEventListener('pagehide',saveState);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveState()});
@@ -567,15 +570,17 @@ async function init(){
 function buildSeg(){
   const box=$('segArch');
   SHORT.forEach((n,i)=>{const b=document.createElement('button');b.textContent=SHORT[i];b.dataset.v=i;b.setAttribute('aria-pressed',i===0);box.appendChild(b)});
-  box.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);loadRun()});
+  const t4=$('segT4');SHORT.slice(6).forEach((n,k)=>{const b=document.createElement('button');b.textContent=n;b.dataset.v=k+6;b.title=T4[k].t;b.setAttribute('aria-pressed','false');t4.appendChild(b)});
+  const pickArch=e=>{const b=e.target.closest('button');if(!b)return;sel.arch=+b.dataset.v;pressed(box,b);pressed(t4,b);loadRun()};
+  box.addEventListener('click',pickArch);t4.addEventListener('click',pickArch);
   $('segScn').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.scn=b.dataset.v;pressed($('segScn'),b);loadRun()});
   $('segDisp').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.disp=b.dataset.v;pressed($('segDisp'),b);loadRun()});
   $('segPaths').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.paths=b.dataset.v;pressed($('segPaths'),b);statDirty=true;loadRun()});
   $('segBase').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.base=b.dataset.v;pressed($('segBase'),b);statDirty=true;loadRun()});
   $('thr').addEventListener('input',()=>{$('thrVal').textContent=$('thr').value+'%'});
   $('resetBtn').addEventListener('click',()=>{Object.assign(sel,{arch:0,scn:'normal',run:'typical',disp:'std',paths:'off',base:'off',thr:20});
-    const mk=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));if(b)pressed($(id),b)};
-    mk('segArch',0);mk('segScn','normal');mk('segRun','typical');mk('segDisp','std');mk('segPaths','off');mk('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';statDirty=true;loadRun()});
+    const mk=(id,v)=>{const b=[...$(id).children].find(c=>String(c.dataset.v)===String(v));pressed($(id),b||null)};
+    mk('segArch',0);mk('segT4',0);mk('segScn','normal');mk('segRun','typical');mk('segDisp','std');mk('segPaths','off');mk('segBase','off');$('thr').value=20;$('thrVal').textContent='20%';statDirty=true;loadRun()});
   $('thr').addEventListener('change',()=>{sel.thr=+$('thr').value;loadRun()});
   $('segRun').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sel.run=b.dataset.v;pressed($('segRun'),b);loadRun()});
 }
@@ -584,10 +589,10 @@ function buildLegend(){
   const sw=(c,shape)=>shape==='bike'?`<svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="${c}"/></svg>`:`<svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="${c}"/></svg>`;
   $('legend').innerHTML=`<span>${sw('var(--carry)')}Carrying passengers</span><span>${sw('var(--empty)')}Driving empty</span><span>${sw('var(--idle)')}Idle</span><span>${sw('var(--charge)')}Charging</span><span><svg width="16" height="12"><rect x="1" y="2" width="14" height="8" rx="3" fill="var(--ink-3)"/></svg>shuttle</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--ink-3)"/></svg>e-bike</span><span><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--wait-bad)"/></svg>waiting more than 5 min</span><span id="lgBase" hidden><svg width="14" height="14"><rect x="1" y="1" width="12" height="12" rx="3" fill="var(--charge)"/></svg>charging base</span><span id="lgPaths" hidden><svg width="18" height="12"><line x1="1" y1="6" x2="17" y2="6" stroke="var(--ink-2)" stroke-width="1.6" stroke-dasharray="4 3"/></svg>campus footpath (bikes only)</span>`;
 }
-function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?'_paths':'');
+function caseFor(){const key='cases'+(sel.disp==='smart'?'_smart':'')+((sel.paths==='on'&&ARC(sel.arch)&&ARC(sel.arch).Bikes>0)?'_paths':'');
   const find=k=>(IDX[k]||[]).find(c=>c.scenario===sel.scn&&c.arch===NAMES[sel.arch]);return find(key)||find('cases'+(sel.disp==='smart'?'_smart':''))||find('cases')}
-function needsLive(){return sel.base==='on'||sel.thr!==20||sel.scn==='storm'}
-function archCfg(){const a=IDX.archs[sel.arch];return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
+function needsLive(){return sel.arch>=6||sel.base==='on'||sel.thr!==20||sel.scn==='storm'}
+function archCfg(){const a=ARC(sel.arch);return {shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm',smart:sel.disp==='smart',paths:sel.paths==='on'&&!!MAP.bedges&&a.Bikes>0,pathFactor:MAP.bike_factor?MAP.bike_factor.mean:1,base:sel.base==='on'&&!!MAP.base,chargeBelow:sel.thr/100}}
 function lockForModel(){const m=sel.run==='model'&&sel.arch!==5;[['segDisp'],['segPaths'],['segBase'],['thr']].forEach(([id])=>{const g=$(id).closest('.grp');g.classList.toggle('dis',m);g.querySelectorAll('button,input').forEach(e=>e.disabled=m);if(m)g.title='Not used by the model day, which has no batteries and ignores dispatch and bike routes.';else g.removeAttribute('title')})}
 async function loadRun(){
   lockForModel();
@@ -604,7 +609,7 @@ async function loadRun_(){
   let d=CACHE[r.file];if(!d){try{d=await getJSON(r.file)}catch(e){$('loading').textContent='Could not load '+r.file;return}CACHE[r.file]=d;prep(d)}
   RUN=d;RUN.caseInfo=c;RUN.runInfo=r;$('loading').hidden=true;
   $('fleetName').textContent=fleetTitle(d);$('fleetSub').textContent=fleetSub(d);
-  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')')+(sel.disp==='smart'?', smart dispatch':'')+((sel.paths==='on'&&IDX.archs[sel.arch]&&IDX.archs[sel.arch].Bikes>0)?', bikes on campus paths':'');
+  $('c1sub').textContent=(sel.scn==='rush'?'rush-hour traffic day, ':'normal weekday, ')+(sel.run==='typical'?'a typical simulated day (#'+r.rep+')':'the worst of 200 simulated days (#'+r.rep+')')+(sel.disp==='smart'?', smart dispatch':'')+((sel.paths==='on'&&ARC(sel.arch)&&ARC(sel.arch).Bikes>0)?', bikes on campus paths':'');
   buildStates();buildCmp();buildEvents();
   statDirty=true;drawAll();updatePanel(true);
 }
@@ -647,7 +652,7 @@ async function loadCustom(over){
 }
 
 async function loadModelPreset(){
-  const a=IDX.archs[sel.arch],cfg={shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm'};
+  const a=ARC(sel.arch),cfg={shuttle:a['Shuttle spec']&&a.Shuttles>0?a['Shuttle spec'].split('/'):null,ns:a.Shuttles>0?+a.Shuttles:0,bike:a.Bikes>0?a['Bike spec'].split('/'):null,nb:a.Bikes>0?+a.Bikes:0,rush:sel.scn==='rush',storm:sel.scn==='storm'};
   playing=false;$('play').textContent='Play';$('loading').hidden=false;$('loading').textContent='Building the model day…';
   await new Promise(r=>setTimeout(r,30));
   const key='P'+JSON.stringify(cfg);let d=CACHE[key];if(!d){d=FleetSim.runModelDay(cfg);prep(d);CACHE[key]=d}
